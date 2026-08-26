@@ -142,6 +142,30 @@
   }
 
   // ---- boot ----
+
+  // Fetching the jars up front warms the CDN edge and the browser cache
+  // (CheerpJ's ranged reads occasionally hit a cold edge that answers
+  // without Range support), and it gives phones a visible progress number.
+  async function warmJars() {
+    var urls = ["./jars/launcher.2.jar", "./jars/paper-server.445p3.jar"];
+    var total = 0, loaded = 0;
+    try {
+      var heads = await Promise.all(urls.map(function (u) { return fetch(u, { method: "HEAD" }); }));
+      heads.forEach(function (h) { total += Number(h.headers.get("content-length")) || 0; });
+      for (var i = 0; i < urls.length; i++) {
+        var res = await fetch(urls[i]);
+        if (!res.ok || !res.body) continue;
+        var reader = res.body.getReader();
+        while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          loaded += chunk.value.length;
+          if (total) setState("booting", "downloading " + Math.min(99, Math.round(loaded / total * 100)) + "%");
+        }
+      }
+    } catch (e) { /* CheerpJ fetches the jars itself either way */ }
+  }
+
   function injectCheerpJ() {
     return new Promise(function (resolve, reject) {
       var s = document.createElement("script");
@@ -173,6 +197,7 @@
       });
       setState("booting", "downloading jars");
       log("[page] runtime up. downloading ~21 MB of jars (cached after the first visit)…");
+      await warmJars();
       log("[page] booting paper 1.8.8 — this takes a minute or two, longer on a phone.");
       setState("booting");
       var code = await cheerpjRunMain("BrowserLauncher", classpath);
