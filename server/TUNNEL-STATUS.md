@@ -6,36 +6,68 @@ State of the relay/tunnel side as of 2026-08-26. Host machine: **`sams-pc`** (Wi
 
 | Thing | Value | State |
 |---|---|---|
+| **Public Minecraft address** | **`olds-hunger.tun.ply.gg:39539`** | ✅ **working, verified through the internet** |
 | Host WebSocket URL for the tab | `wss://sams-pc.taila9d64b.ts.net:8443/host` | ⛔ **blocked** — see [Tailscale](#tailscale--blocked) |
 | Health URL | `https://sams-pc.taila9d64b.ts.net:8443/health` | ⛔ blocked, same cause |
-| Public Minecraft address | not yet assigned | ⛔ **blocked** — see [playit](#playitgg--blocked) |
 | Local host WebSocket (works now) | `ws://localhost:8971/host` | ✅ working |
 | Local health (works now) | `http://localhost:8971/health` | ✅ working |
 
-**The relay itself is finished and fully tested.** Both blocked items are account-level toggles
-in someone else's web console — neither is a code problem, and neither changes the protocol.
-Build the page half against `ws://localhost:8971/host` now; the only thing that changes when the
-blockers clear is the scheme and host in the URL.
+The relay and the public TCP path are **done and proven end to end**. The only thing left is the
+`wss://` endpoint for the phone, which is blocked on one toggle in the Tailscale admin console —
+not a code problem, and it does not change the protocol.
+
+Build the page half against `ws://localhost:8971/host` now; when the toggle lands the only change
+is the scheme and host in the URL.
 
 ## What is verified working
 
-The relay, built from `server/`, passes every test in the brief. Run against
-`-tcp 127.0.0.1:25565 -ws 127.0.0.1:8971`:
+Built from `server/`, run as `-tcp 127.0.0.1:25565 -ws 127.0.0.1:8971`:
 
 | Test | Result |
 |---|---|
-| `echotest` → relay → `fakehost` → back | ✅ `got 6 byte(s): "hello\n"` / `OK echo matched` |
-| Second connection to `/host` | ✅ `closed by relay, code 1013 "host already connected"` — first host unaffected |
-| Kill `fakehost` while a client is held open | ✅ `OK peer closed the connection (EOF)`, health returns to `{"conns":0,"host":false}` |
+| `echotest` → relay → `fakehost` → back (local) | ✅ `OK echo matched` |
+| **`echotest -mc` → playit → relay → `fakehost` → back (public internet)** | ✅ **`OK echo matched`, 31 bytes** |
+| Second connection to `/host` | ✅ `closed by relay, code 1013 "host already connected"`, first host unaffected |
+| Kill `fakehost` while a client is held open | ✅ `OK peer closed the connection (EOF)`, health → `{"conns":0,"host":false}` |
 | TCP client with no host connected | ✅ accepted then immediately aborted |
-| `/health` connection counting | ✅ `{"conns":1,"host":true}` with one client, `{"conns":0,"host":false}` after |
+| `/health` connection counting | ✅ `{"conns":1,"host":true}` with one client |
 
-## Blockers
+The public run shows up in the relay log as `conn 5: open from 127.238.109.183` — the playit
+agent — with `fakehost: echo 31 byte(s) on conn 5`.
 
-### Tailscale — blocked
+## playit.gg — working
 
-`tailscale serve --bg --https 8443 http://localhost:8971` hangs with no output and writes no
-serve config. Cause, confirmed directly:
+| | |
+|---|---|
+| Public address | `olds-hunger.tun.ply.gg:39539` |
+| Static IPv4 | `147.185.221.230:39539` (also `2602:fbaf:800::e6`) |
+| Tunnel name / type | `Minecraft Java`, tcp, region global, shared IP |
+| Forwards to | `127.0.0.1:25565` |
+| Agent | `from-key-8b2a`, id `65eb2824-404e-4295-9953-1c179a038669` |
+| Agent version | 1.0.10, installed via `winget install --id DevelopedMethods.playit -e` |
+| Secret | `C:\ProgramData\playit_gg\playit.toml` (system-wide, service-owned) |
+
+Runs as a Windows service, so it comes back by itself after a reboot.
+
+### Testing through the public address needs `-mc`
+
+A playit **Minecraft Java** tunnel is protocol-aware. Its edge reads the client's handshake packet
+to route the connection and **silently drops anything whose first bytes are not Minecraft**. A
+plain `hello\n` gets accepted by the edge and killed before it reaches the agent — the relay logs
+nothing whatsoever, which looks exactly like a broken relay and is not one. This cost some time to
+pin down; it is why `echotest` grew a `-mc` flag that sends a real handshake + status request.
+
+```bash
+./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539     # public: needs -mc
+./echotest.exe 127.0.0.1:25565                                   # local: -mc optional
+```
+
+Real Minecraft clients are unaffected — they send a real handshake by definition.
+
+## Tailscale — blocked
+
+`tailscale serve --bg --https 8443 http://localhost:8971` hangs with no output and writes no serve
+config. Cause, confirmed directly and re-tested three times:
 
 ```
 $ tailscale cert sams-pc.taila9d64b.ts.net
@@ -44,39 +76,18 @@ $ tailscale cert sams-pc.taila9d64b.ts.net
 
 HTTPS certificates are not enabled for the tailnet, so `serve` can never provision a cert.
 
-**What you need to click:** open <https://login.tailscale.com/admin/dns>, scroll to the
-**HTTPS Certificates** section, and press **Enable HTTPS**. Confirm the dialog (it warns that
-your machine names become public in certificate transparency logs — that is expected and normal).
-MagicDNS is already on, so nothing else is needed.
+**What to click:** <https://login.tailscale.com/admin/dns> → **HTTPS Certificates** section →
+**Enable HTTPS**, and confirm the dialog (it warns that machine names become public in certificate
+transparency logs — expected and normal). MagicDNS is already on, nothing else is needed.
 
-Once that is done, the serve command should succeed as written. Cert provisioning takes 30–60 s
-on first run.
+Then the serve command works as written; first cert takes 30–60 s.
 
-- Tailnet: `taila9d64b.ts.net` · this machine's MagicDNS name: `sams-pc.taila9d64b.ts.net`
-- Devices seen on the tailnet: `sams-pc`, `sams-macbook-pro`, `iphone182` — so the phone can
-  already reach this desktop once TLS is available.
-
-### playit.gg — blocked
-
-An agent was already claimed on this machine (secret dated 2026-05-13, stored at
-`C:\ProgramData\playit_gg\playit.toml`), so there is **no claim URL to hand over** — the account
-exists. The agent was upgraded to 1.0.10 and the service starts, but refuses to run:
-
-```
-Phase: disabled over limit
-The playit service cannot start because this account is over the agent limit.
-```
-
-**What you need to click:** open <https://playit.gg/account/agents> and delete an agent you no
-longer use (or upgrade at <https://playit.gg/account/upgrade>). The service retries on its own
-once there is room.
-
-After that, create a **Minecraft Java (TCP)** tunnel pointing at `localhost:25565` and the public
-address gets recorded here.
+- Tailnet `taila9d64b.ts.net` · this machine `sams-pc.taila9d64b.ts.net` (100.73.179.27)
+- Tailscale 1.102.2, already installed and logged in
+- On the tailnet: `sams-pc`, `sams-macbook-pro`, `iphone182` — the phone can already reach this
+  desktop, it just needs TLS
 
 ## Running everything after a reboot
-
-Nothing here is installed as an auto-start service except playit, so after a reboot:
 
 ```bash
 # 1. relay — from the repo, on the tunnel branch
@@ -84,11 +95,11 @@ cd server
 go build -o relay.exe .
 ./relay.exe -tcp 127.0.0.1:25565 -ws 127.0.0.1:8971
 
-# 2. playit agent (Windows service, survives reboot once it is under the agent limit)
-"/c/Program Files/playit_gg/bin/playit.exe" start
-"/c/Program Files/playit_gg/bin/playit.exe" status     # expect Phase: online
+# 2. playit agent — Windows service, should already be up
+"/c/Program Files/playit_gg/bin/playit.exe" status     # expect Phase: running
+"/c/Program Files/playit_gg/bin/playit.exe" start      # only if it is not
 
-# 3. tailscale serve (persists across reboots once set; --bg makes it a stored config)
+# 3. tailscale serve — persists once set; run again only if serve status is empty
 "/c/Program Files/Tailscale/tailscale.exe" serve --bg --https 8443 http://localhost:8971
 "/c/Program Files/Tailscale/tailscale.exe" serve status
 ```
@@ -97,29 +108,30 @@ Sanity check the whole chain without the browser:
 
 ```bash
 ./fakehost.exe -relay ws://localhost:8971/host &
-./echotest.exe 127.0.0.1:25565                 # local
-./echotest.exe -timeout 20s <public-playit-address>   # through the internet
+./echotest.exe 127.0.0.1:25565                                  # local
+./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539    # through the internet
 ```
 
 ## Notes
 
-**Ports.** Relay TCP `25565`, relay HTTP/WS `8971`, Tailscale HTTPS `8443`. The relay is bound to
+**Ports.** Relay TCP `25565`, relay HTTP/WS `8971`, Tailscale HTTPS `8443`. The relay binds to
 `127.0.0.1` deliberately: the playit agent and `tailscale serve` both run on this same desktop and
 reach it over loopback, so it never needs LAN exposure — and Windows Firewall never prompts.
 Defaults in the binary remain `:25565` / `:8971` per spec; the localhost bind is a run-time flag.
 
-**Windows Firewall.** No firewall dialog has been accepted. None appeared, because of the
-loopback bind above and because the playit agent only makes outbound connections.
+**Windows Firewall.** No firewall dialog was ever shown or accepted, for the reason above.
 
 ## Deviations from the spec
 
-None in the protocol. Two things worth knowing:
+None in the protocol. Three things worth knowing:
 
 1. **`"host"` in `/health` means *handshake complete*, not merely *socket connected*.** It flips
    true after the tab's `hello` is answered with `ready`, which is the point the relay will
    actually accept clients for it. The window between TCP connect and `hello` is sub-second.
 2. **A rejected second host is drained before its socket closes.** Writing the 1013 close frame
-   and immediately closing left unread bytes in the receive buffer, which makes Windows send an
-   RST — and the RST threw away the close frame, so the second tab saw a dropped connection
+   and immediately closing left the peer's unread `hello` in the receive buffer, and Windows turns
+   that into an RST — which discards the close frame, so the second tab saw a dropped connection
    instead of `1013`. The relay now reads until the peer's own close (2 s cap) before closing.
    Without this the page cannot distinguish "already hosted" from "relay is down".
+3. **`echotest` gained a `-mc` flag** that was not in the brief, for the playit protocol-inspection
+   reason above. The brief's `echotest` behaviour is unchanged by default.

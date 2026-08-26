@@ -102,6 +102,8 @@ no page involved.
   payload back on the same connection id.
 - `cmd/echotest` — TCP client: connects to a `host:port`, sends `hello\n`, checks the reply.
   `-hold <dur>` keeps the socket open afterwards and asserts the far end closes it.
+  `-mc` sends a real Minecraft handshake instead of `hello\n` — **required when testing through
+  the public playit address**, see below.
 
 ```bash
 ./relay.exe -tcp 127.0.0.1:25565 -ws 127.0.0.1:8971 &
@@ -123,8 +125,14 @@ taskkill //F //IM fakehost.exe
 
 `echotest` exits non-zero on failure, so these script cleanly.
 
-To point `echotest` at the public address instead of localhost, pass the playit hostname:
+To test through the public address, pass the playit hostname **and `-mc`**:
 
 ```bash
-./echotest.exe -timeout 20s <public-playit-address>
+./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539
 ```
+
+`-mc` is not optional there. A playit **Minecraft Java** tunnel is protocol-aware: its edge reads
+the client's handshake packet to route the connection, and silently drops connections whose first
+bytes are not Minecraft. Without `-mc` the connection is accepted by the edge and then killed
+before it ever reaches the agent — the relay logs nothing at all, which looks like a relay fault
+and is not one. With `-mc` the same 31 bytes round-trip cleanly.
