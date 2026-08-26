@@ -404,4 +404,11 @@
   });
 
   setState("idle");
+
+  // ?autoboot=1 powers on immediately (and counts as accepting the EULA) —
+  // used for automated testing and boot-me deep links.
+  if (new URLSearchParams(location.search).has("autoboot")) {
+    try { localStorage.setItem("pit.eula", "yes"); } catch (e) {}
+    boot();
+  }
 })();
