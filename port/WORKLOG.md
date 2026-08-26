@@ -76,4 +76,3 @@ Paper.IgnoreJavaVersion=true; 26.2 works in /files/v26 (1.8.8 owns /files).
 
 - JDK 8 local: boots, commands work, clean shutdown.
 - CheerpJ: FULLY WORKING — boots to Done in ~40s (M-series desktop), commands, clean stop, world persistence across reloads all verified locally.
-  patched; currently verifying full boot in browser.
