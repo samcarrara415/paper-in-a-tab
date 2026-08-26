@@ -26,6 +26,17 @@ This remake makes two trades to fit "quick" and "static hosting only":
 It's also tuned to boot on phones: flat world, Nether and End disabled, view distance 3,
 and a ~21 MB download instead of ~110 MB.
 
+## The 26.2 port (yes, really)
+
+The site now has a second bay: **Paper 26.2 — modern Paper, built for Java 25 — AI-ported to
+Java 8 bytecode from scratch** (no Lodeway patches used) and running under CheerpJ. The pipeline
+lives in `port/`: official Paper 26.2 jars are downgraded with a bug-fixed
+[JVMDowngrader](https://github.com/unimined/JvmDowngrader) (six fixes, in `port/patches/`),
+plus a dozen targeted bytecode patches for things a browser can't do (TCP listeners, JFR,
+JAAS natives, netty's Unsafe probing, CheerpJ filesystem quirks). `port/WORKLOG.md` documents
+every failure and fix in order. Boots to "Done" in ~40–90 s on a desktop; the 1.8.8 bay remains
+the phone-sized option.
+
 ## Layout
 
 ```
