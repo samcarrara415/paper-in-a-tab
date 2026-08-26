@@ -108,6 +108,9 @@
       setState("running");
       log("[page] server is up. commands are live below.");
       refreshFiles();
+      // ?autocmd=<command> runs one command after boot — automated testing.
+      var auto = new URLSearchParams(location.search).get("autocmd");
+      if (auto) setTimeout(function () { log("> " + auto); cmdQueue.push(auto); }, 4000);
     }
     if (line.indexOf("Closing Server") !== -1 || line.indexOf("Stopping server") !== -1) {
       setState("stopping");
