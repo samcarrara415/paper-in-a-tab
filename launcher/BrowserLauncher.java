@@ -134,31 +134,118 @@ public class BrowserLauncher {
 
     // ---- first-boot configuration ---------------------------------------
 
+    // Bump this whenever the tuned defaults below change: existing browsers
+    // carry their configs in IndexedDB, and a bump overwrites them with the
+    // new profile on next boot (a marker file tracks the applied version).
+    static final int CONFIG_VERSION = 2;
+
     static void writeDefaultConfigs() throws IOException {
-        writeIfAbsent("eula.txt", "eula=true\n");
-        writeIfAbsent("server.properties",
+        boolean upgrade = readConfigVersion() < CONFIG_VERSION;
+        writeConfig("eula.txt", "eula=true\n", upgrade);
+
+        // max-tick-time=-1 disables the vanilla single-tick watchdog: a phone
+        // GC pause or backgrounded tab can stall one tick past 60s, and the
+        // default kills the whole server for it.
+        writeConfig("server.properties",
                 "level-type=FLAT\n" +
                 "online-mode=false\n" +
                 "allow-nether=false\n" +
                 "view-distance=3\n" +
+                "max-tick-time=-1\n" +
                 "snooper-enabled=false\n" +
                 "max-players=5\n" +
                 "spawn-protection=0\n" +
-                "motd=Paper in a tab (AI remake)\n");
-        writeIfAbsent("bukkit.yml",
-                "settings:\n  allow-end: false\n  shutdown-message: Server closed\n");
-        // Browser ticks are slow; without this the watchdog kills the server.
-        writeIfAbsent("spigot.yml",
-                "settings:\n  timeout-time: 600\n  restart-on-crash: false\n");
+                "motd=Paper in a tab (AI remake)\n", upgrade);
+
+        // Fewer entities to tick, spawn chunks allowed to unload when idle,
+        // more frequent chunk GC to keep the tab's memory down, and autosave
+        // spread out so world saves don't stutter the tick loop as often.
+        writeConfig("bukkit.yml",
+                "settings:\n" +
+                "  allow-end: false\n" +
+                "  shutdown-message: Server closed\n" +
+                "spawn-limits:\n" +
+                "  monsters: 20\n" +
+                "  animals: 5\n" +
+                "  water-animals: 2\n" +
+                "  ambient: 1\n" +
+                "ticks-per:\n" +
+                "  animal-spawns: 400\n" +
+                "  monster-spawns: 4\n" +
+                "  autosave: 3000\n" +
+                "chunk-gc:\n" +
+                "  period-in-ticks: 300\n" +
+                "  load-threshold: 120\n", upgrade);
+
+        // timeout-time keeps Spigot's watchdog patient with slow browser
+        // ticks; the activation/tracking ranges and per-tick time budgets cap
+        // how much entity and tile work a single tick is allowed to do.
+        writeConfig("spigot.yml",
+                "settings:\n" +
+                "  timeout-time: 600\n" +
+                "  restart-on-crash: false\n" +
+                "  save-user-cache-on-stop-only: true\n" +
+                "world-settings:\n" +
+                "  default:\n" +
+                "    mob-spawn-range: 2\n" +
+                "    entity-activation-range:\n" +
+                "      animals: 8\n" +
+                "      monsters: 12\n" +
+                "      misc: 2\n" +
+                "    entity-tracking-range:\n" +
+                "      players: 32\n" +
+                "      animals: 24\n" +
+                "      monsters: 24\n" +
+                "      misc: 16\n" +
+                "      other: 32\n" +
+                "    max-tick-time:\n" +
+                "      tile: 30\n" +
+                "      entity: 30\n" +
+                "    ticks-per:\n" +
+                "      hopper-transfer: 8\n" +
+                "      hopper-check: 8\n", upgrade);
+
+        // Paper's own levers: cheaper explosions, no weather tick work, and —
+        // the big one — spawn chunks may unload, so an idle server ticks
+        // almost nothing and the tab stays responsive.
+        writeConfig("paper.yml",
+                "world-settings:\n" +
+                "  default:\n" +
+                "    keep-spawn-loaded: false\n" +
+                "    optimize-explosions: true\n" +
+                "    disable-thunder: true\n" +
+                "    disable-ice-and-snow: true\n" +
+                "    mob-spawner-tick-rate: 2\n" +
+                "    max-entity-collisions: 2\n", upgrade);
+
         // No usage pings to mcstats.org from inside a demo tab.
         new File("plugins/PluginMetrics").mkdirs();
-        writeIfAbsent("plugins/PluginMetrics/config.yml",
-                "opt-out: true\nguid: 00000000-0000-0000-0000-000000000000\ndebug: false\n");
+        writeConfig("plugins/PluginMetrics/config.yml",
+                "opt-out: true\nguid: 00000000-0000-0000-0000-000000000000\ndebug: false\n", upgrade);
+
+        if (upgrade) {
+            Writer w = new OutputStreamWriter(new FileOutputStream(".pit-config-version"), StandardCharsets.UTF_8);
+            w.write(String.valueOf(CONFIG_VERSION));
+            w.close();
+            send("[launcher] applied browser performance profile v" + CONFIG_VERSION);
+        }
     }
 
-    static void writeIfAbsent(String name, String content) throws IOException {
+    static int readConfigVersion() {
+        try {
+            BufferedReader r = new BufferedReader(new InputStreamReader(
+                    new FileInputStream(".pit-config-version"), StandardCharsets.UTF_8));
+            String s = r.readLine();
+            r.close();
+            return Integer.parseInt(s.trim());
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    static void writeConfig(String name, String content, boolean force) throws IOException {
         File f = new File(name);
-        if (!f.exists()) {
+        if (force || !f.exists()) {
             Writer w = new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8);
             w.write(content);
             w.close();

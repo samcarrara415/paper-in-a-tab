@@ -64,14 +64,14 @@ curl -L -o tools/asm.jar https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7.1/as
 (cd tools && javac -cp asm.jar Patcher.java && java -cp asm.jar:. Patcher ../work/cache/patched_1.8.8.jar ../docs/jars/paper-server.445p3.jar)
 
 # 3. build the launcher
-(cd launcher && javac -source 8 -target 8 -cp ../docs/jars/paper-server.445p3.jar BrowserLauncher.java && jar cf ../docs/jars/launcher.2.jar *.class)
+(cd launcher && javac -source 8 -target 8 -cp ../docs/jars/paper-server.445p3.jar BrowserLauncher.java && jar cf ../docs/jars/launcher.3.jar *.class)
 
 # 4. serve (CheerpJ needs HTTP Range support, so python -m http.server won't work)
 npx http-server docs -p 8899 -c-1
 ```
 
 To test the launcher on a real JDK 8 without a browser:
-`java -Dbrowser.natives=false -cp docs/jars/paper-server.445p3.jar:docs/jars/launcher.2.jar BrowserLauncher`
+`java -Dbrowser.natives=false -cp docs/jars/paper-server.445p3.jar:docs/jars/launcher.3.jar BrowserLauncher`
 
 ## Licenses & credit
 

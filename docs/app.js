@@ -29,7 +29,7 @@
   // GitHub Pages serves this site from a subpath; CheerpJ's /app mount maps to
   // the origin root, so the jar paths must include wherever we're deployed.
   var basePath = new URL(".", location.href).pathname; // e.g. "/paper-in-a-tab/"
-  var classpath = "/app" + basePath + "jars/launcher.2.jar:/app" + basePath + "jars/paper-server.445p3.jar";
+  var classpath = "/app" + basePath + "jars/launcher.3.jar:/app" + basePath + "jars/paper-server.445p3.jar";
 
   // ---- console rendering (batched, ring-buffered) ----
   var pendingLines = [];
@@ -147,7 +147,7 @@
   // (CheerpJ's ranged reads occasionally hit a cold edge that answers
   // without Range support), and it gives phones a visible progress number.
   async function warmJars() {
-    var urls = ["./jars/launcher.2.jar", "./jars/paper-server.445p3.jar"];
+    var urls = ["./jars/launcher.3.jar", "./jars/paper-server.445p3.jar"];
     var total = 0, loaded = 0;
     try {
       var heads = await Promise.all(urls.map(function (u) { return fetch(u, { method: "HEAD" }); }));
