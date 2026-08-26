@@ -278,12 +278,12 @@
       setState("booting");
       var code = await cheerpjRunMain(plan.main, plan.classpath);
       // cheerpjRunMain resolves when the JVM exits (i.e. after /stop).
-      setState("stopped", "powered off");
+      setState("stopped", "powered off · exit " + code);
       log("[page] the jvm has exited (code " + code + "). reload the page to power on again.");
       offerReload();
     } catch (e) {
       console.error(e);
-      setState("failed");
+      setState("failed", "failed: " + String(e && e.message ? e.message : e).slice(0, 40));
       log("[page] boot failed: " + (e && e.message ? e.message : e));
       log("[page] reload the page to try again. on phones, closing other tabs frees memory.");
       offerReload();
