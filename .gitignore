@@ -6,3 +6,15 @@ tools/asm.jar
 tools/*.class
 launcher/*.class
 .DS_Store
+port/jdk-25*
+port/jdk25.tar.gz
+port/run25/
+port/run8*/
+port/dg/
+port/jvmdg-src/
+port/cmp*/
+port/cfg-classes/
+port/cfg-src/
+port/*.jar
+port/launcher26/*.class
+port/checker-qual.jar

@@ -1,0 +1,514 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index dfe610f..2a9e185 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -146,7 +146,7 @@ val mainVersion = project.findProperty("mainVersion") as String
+ java {
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(mainVersion.toInt()))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+diff --git a/gradle-plugin/build.gradle.kts b/gradle-plugin/build.gradle.kts
+index 5fac16a..55eaf94 100644
+--- a/gradle-plugin/build.gradle.kts
++++ b/gradle-plugin/build.gradle.kts
+@@ -17,7 +17,7 @@ java {
+ 
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(8))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+@@ -88,7 +88,7 @@ tasks.test {
+ 
+     javaLauncher = javaToolchains.launcherFor {
+         languageVersion.set(JavaLanguageVersion.of(17))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+diff --git a/gradle-plugin/test-downgrade/build.gradle.kts b/gradle-plugin/test-downgrade/build.gradle.kts
+index 1fedb85..3c77544 100644
+--- a/gradle-plugin/test-downgrade/build.gradle.kts
++++ b/gradle-plugin/test-downgrade/build.gradle.kts
+@@ -70,7 +70,7 @@ tasks.compileJava {
+ 
+     javaCompiler = javaToolchains.compilerFor {
+         languageVersion.set(JavaLanguageVersion.of(testVersion.majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+diff --git a/java-api/build.gradle.kts b/java-api/build.gradle.kts
+index bff39dc..ab48bf1 100644
+--- a/java-api/build.gradle.kts
++++ b/java-api/build.gradle.kts
+@@ -197,7 +197,7 @@ tasks.getByName<Jar>("sourcesJar") {
+ tasks.javadoc {
+     javadocTool = javaToolchains.javadocToolFor {
+         languageVersion.set(JavaLanguageVersion.of((toVersion - 1).majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+     for (vers in fromVersion..toVersion) {
+         source += sourceSets["java${vers.ordinal + 1}"].allJava
+@@ -227,8 +227,8 @@ fun JavaCompile.configCompile(version: JavaVersion) {
+     options.encoding = "UTF-8"
+ 
+     javaCompiler = javaToolchains.compilerFor {
+-        languageVersion = JavaLanguageVersion.of(version.majorVersion)
+-        vendor.set(JvmVendorSpec.AZUL)
++        languageVersion = JavaLanguageVersion.of(maxOf(8, version.majorVersion.toInt()))
++
+     }
+ }
+ 
+@@ -252,7 +252,7 @@ fun downgradeApi(version: JavaVersion): TaskProvider<Jar> {
+ 
+         javaLauncher = javaToolchains.launcherFor {
+             languageVersion.set(JavaLanguageVersion.of((toVersion - 1).majorVersion))
+-            vendor.set(JvmVendorSpec.AZUL)
++
+         }
+     }
+ 
+diff --git a/java-api/src/java19/java/xyz/wagyourtail/jvmdg/j19/stub/java_base/J_L_Thread.java b/java-api/src/java19/java/xyz/wagyourtail/jvmdg/j19/stub/java_base/J_L_Thread.java
+index f88a396..4679c93 100644
+--- a/java-api/src/java19/java/xyz/wagyourtail/jvmdg/j19/stub/java_base/J_L_Thread.java
++++ b/java-api/src/java19/java/xyz/wagyourtail/jvmdg/j19/stub/java_base/J_L_Thread.java
+@@ -8,10 +8,15 @@ import java.time.Duration;
+ public class J_L_Thread {
+ 
+     @Stub
+-    public static void join(Thread thread, Duration duration) throws InterruptedException {
++    public static boolean join(Thread thread, Duration duration) throws InterruptedException {
++        // Thread.join(Duration) (Java 19+) returns whether the thread terminated.
+         long millis = duration.toMillis();
+         int nanos = duration.getNano() % 1_000_000;
++        if (millis <= 0 && nanos <= 0) {
++            return !thread.isAlive();
++        }
+         thread.join(millis, nanos);
++        return !thread.isAlive();
+     }
+ 
+     @Stub(ref = @Ref("Ljava/lang/Thread;"))
+diff --git a/java-api/src/java21/java/xyz/wagyourtail/jvmdg/j21/stub/java_base/J_U_SequencedMap.java b/java-api/src/java21/java/xyz/wagyourtail/jvmdg/j21/stub/java_base/J_U_SequencedMap.java
+index dd44ace..44a4bb8 100644
+--- a/java-api/src/java21/java/xyz/wagyourtail/jvmdg/j21/stub/java_base/J_U_SequencedMap.java
++++ b/java-api/src/java21/java/xyz/wagyourtail/jvmdg/j21/stub/java_base/J_U_SequencedMap.java
+@@ -43,16 +43,29 @@ public class J_U_SequencedMap {
+ 
+     @Stub
+     public static <K, V> Map.Entry<K, V> firstEntry(Map<K, V> self) {
+-        return self.entrySet().iterator().next();
++        // SequencedMap.firstEntry returns null on empty; NavigableMaps have an
++        // atomic native implementation that predates SequencedMap.
++        if (self instanceof NavigableMap<K, V> nav) {
++            return nav.firstEntry();
++        }
++        var it = self.entrySet().iterator();
++        return it.hasNext() ? it.next() : null;
+     }
+ 
+     @Stub
+     public static <K, V> Map.Entry<K, V> lastEntry(Map<K, V> self) {
+-        return reversed(self).entrySet().iterator().next();
++        if (self instanceof NavigableMap<K, V> nav) {
++            return nav.lastEntry();
++        }
++        var it = reversed(self).entrySet().iterator();
++        return it.hasNext() ? it.next() : null;
+     }
+ 
+     @Stub
+     public static <K, V> Map.Entry<K, V> pollFirstEntry(Map<K, V> self) {
++        if (self instanceof NavigableMap<K, V> nav) {
++            return nav.pollFirstEntry();
++        }
+         var it = self.entrySet().iterator();
+         if (!it.hasNext()) {
+             return null;
+@@ -64,6 +77,9 @@ public class J_U_SequencedMap {
+ 
+     @Stub
+     public static <K, V> Map.Entry<K, V> pollLastEntry(Map<K, V> self) {
++        if (self instanceof NavigableMap<K, V> nav) {
++            return nav.pollLastEntry();
++        }
+         return pollFirstEntry(reversed(self));
+     }
+ 
+diff --git a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_MethodHandles.java b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_MethodHandles.java
+index 6920f1a..1efb224 100644
+--- a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_MethodHandles.java
++++ b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_MethodHandles.java
+@@ -46,7 +46,19 @@ public class J_L_I_MethodHandles {
+ 
+ 
+     @JEP(193)
+-    @Stub(ref = @Ref("java/lang/invoke/MethodHandles"))
++        @Stub(ref = @Ref("java/lang/invoke/MethodHandles"))
++    public static J_L_I_VarHandle byteArrayViewVarHandle(Class<?> viewArrayClass, java.nio.ByteOrder byteOrder) {
++        Objects.requireNonNull(viewArrayClass);
++        Objects.requireNonNull(byteOrder);
++        Class<?> component = viewArrayClass.getComponentType();
++        if (!viewArrayClass.isArray() || component == null || !component.isPrimitive()
++                || component == boolean.class || component == byte.class) {
++            throw new IllegalArgumentException("not a supported view class: " + viewArrayClass);
++        }
++        return new J_L_I_VarHandle(viewArrayClass, byteOrder);
++    }
++
++@Stub(ref = @Ref("java/lang/invoke/MethodHandles"))
+     public static J_L_I_VarHandle arrayElementVarHandle(Class<?> cls) {
+         Objects.requireNonNull(cls);
+         if (!cls.isArray()) {
+diff --git a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_VarHandle.java b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_VarHandle.java
+index a28bf28..a5ae6a3 100644
+--- a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_VarHandle.java
++++ b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_I_VarHandle.java
+@@ -94,6 +94,9 @@ public class J_L_I_VarHandle {
+     private final boolean isStatic;
+     private final boolean isArray;
+     private final long arrayIndexScale;
++    // byteArrayViewVarHandle support: coordinates are (byte[], byteIndex)
++    private final boolean byteView;
++    private final boolean viewBigEndian;
+ 
+     public J_L_I_VarHandle(Field field) {
+         this.field = field;
+@@ -102,6 +105,8 @@ public class J_L_I_VarHandle {
+         this.isStatic = Modifier.isStatic(field.getModifiers());
+         this.isArray = false;
+         this.arrayIndexScale = 0;
++        this.byteView = false;
++        this.viewBigEndian = false;
+         if (this.isStatic) {
+             this.staticFieldBase = unsafe.staticFieldBase(field);
+             this.fieldOffset = unsafe.staticFieldOffset(field);
+@@ -120,6 +125,61 @@ public class J_L_I_VarHandle {
+         this.staticFieldBase = null;
+         this.fieldOffset = unsafe.arrayBaseOffset(arrayClass);
+         this.arrayIndexScale = unsafe.arrayIndexScale(arrayClass);
++        this.byteView = false;
++        this.viewBigEndian = false;
++    }
++
++    public J_L_I_VarHandle(Class<?> viewArrayClass, java.nio.ByteOrder order) {
++        this.field = null;
++        this.ownerClass = byte[].class;
++        this.type = viewArrayClass.getComponentType();
++        this.isStatic = false;
++        this.isArray = true;
++        this.staticFieldBase = null;
++        this.fieldOffset = 0;
++        this.arrayIndexScale = 1;
++        this.byteView = true;
++        this.viewBigEndian = order == java.nio.ByteOrder.BIG_ENDIAN;
++    }
++
++    private void checkView(Object array, int index, Class<?> t, int width) {
++        Objects.requireNonNull(array);
++        if (!byteView || type != t || !(array instanceof byte[])) {
++            throw new WrongMethodTypeException();
++        }
++        if (index < 0 || index + width > ((byte[]) array).length) {
++            throw new IndexOutOfBoundsException();
++        }
++    }
++
++    private long readViewBits(Object array, int index, int width) {
++        byte[] b = (byte[]) array;
++        long r = 0;
++        if (viewBigEndian) {
++            for (int i = 0; i < width; i++) r = (r << 8) | (b[index + i] & 0xffL);
++        } else {
++            for (int i = width - 1; i >= 0; i--) r = (r << 8) | (b[index + i] & 0xffL);
++        }
++        return r;
++    }
++
++    private void writeViewBits(Object array, int index, int width, long value) {
++        byte[] b = (byte[]) array;
++        if (viewBigEndian) {
++            for (int i = width - 1; i >= 0; i--) { b[index + i] = (byte) value; value >>>= 8; }
++        } else {
++            for (int i = 0; i < width; i++) { b[index + i] = (byte) value; value >>>= 8; }
++        }
++    }
++
++    private Object readViewBoxed(Object array, int index) {
++        if (type == char.class) return getC(array, index);
++        if (type == short.class) return getS(array, index);
++        if (type == int.class) return getI(array, index);
++        if (type == long.class) return getJ(array, index);
++        if (type == float.class) return getF(array, index);
++        if (type == double.class) return getD(array, index);
++        throw new WrongMethodTypeException();
+     }
+ 
+     private void checkStatic(Class<?> type) {
+@@ -294,6 +354,9 @@ public class J_L_I_VarHandle {
+     }
+ 
+     public final Object get(Object owner, int index) {
++        if (byteView) {
++            return readViewBoxed(owner, index);
++        }
+         if (Object.class.isAssignableFrom(type)) {
+             checkArray(owner, index, Object.class);
+             return unsafe.getObject(owner, fieldOffset + index * arrayIndexScale);
+@@ -338,31 +401,55 @@ public class J_L_I_VarHandle {
+     }
+ 
+     public final char getC(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, char.class, 2);
++            return (char) readViewBits(owner, index, 2);
++        }
+         checkArray(owner, index, char.class);
+         return unsafe.getChar(owner, fieldOffset + index * arrayIndexScale);
+     }
+ 
+     public final short getS(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, short.class, 2);
++            return (short) readViewBits(owner, index, 2);
++        }
+         checkArray(owner, index, short.class);
+         return unsafe.getShort(owner, fieldOffset + index * arrayIndexScale);
+     }
+ 
+     public final int getI(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, int.class, 4);
++            return (int) readViewBits(owner, index, 4);
++        }
+         checkArray(owner, index, int.class);
+         return unsafe.getInt(owner, fieldOffset + index * arrayIndexScale);
+     }
+ 
+     public final long getJ(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, long.class, 8);
++            return readViewBits(owner, index, 8);
++        }
+         checkArray(owner, index, long.class);
+         return unsafe.getLong(owner, fieldOffset + index * arrayIndexScale);
+     }
+ 
+     public final float getF(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, float.class, 4);
++            return Float.intBitsToFloat((int) readViewBits(owner, index, 4));
++        }
+         checkArray(owner, index, float.class);
+         return unsafe.getFloat(owner, fieldOffset + index * arrayIndexScale);
+     }
+ 
+     public final double getD(Object owner, int index) {
++        if (byteView) {
++            checkView(owner, index, double.class, 8);
++            return Double.longBitsToDouble(readViewBits(owner, index, 8));
++        }
+         checkArray(owner, index, double.class);
+         return unsafe.getDouble(owner, fieldOffset + index * arrayIndexScale);
+     }
+@@ -473,31 +560,61 @@ public class J_L_I_VarHandle {
+     }
+ 
+     public final void set(Object owner, int index, char value) {
++        if (byteView) {
++            checkView(owner, index, char.class, 2);
++            writeViewBits(owner, index, 2, value);
++            return;
++        }
+         checkArray(owner, index, char.class);
+         unsafe.putChar(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+ 
+     public final void set(Object owner, int index, short value) {
++        if (byteView) {
++            checkView(owner, index, short.class, 2);
++            writeViewBits(owner, index, 2, value);
++            return;
++        }
+         checkArray(owner, index, short.class);
+         unsafe.putShort(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+ 
+     public final void set(Object owner, int index, int value) {
++        if (byteView) {
++            checkView(owner, index, int.class, 4);
++            writeViewBits(owner, index, 4, value);
++            return;
++        }
+         checkArray(owner, index, int.class);
+         unsafe.putInt(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+ 
+     public final void set(Object owner, int index, long value) {
++        if (byteView) {
++            checkView(owner, index, long.class, 8);
++            writeViewBits(owner, index, 8, value);
++            return;
++        }
+         checkArray(owner, index, long.class);
+         unsafe.putLong(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+ 
+     public final void set(Object owner, int index, float value) {
++        if (byteView) {
++            checkView(owner, index, float.class, 4);
++            writeViewBits(owner, index, 4, Float.floatToRawIntBits(value));
++            return;
++        }
+         checkArray(owner, index, float.class);
+         unsafe.putFloat(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+ 
+     public final void set(Object owner, int index, double value) {
++        if (byteView) {
++            checkView(owner, index, double.class, 8);
++            writeViewBits(owner, index, 8, Double.doubleToRawLongBits(value));
++            return;
++        }
+         checkArray(owner, index, double.class);
+         unsafe.putDouble(owner, fieldOffset + index * arrayIndexScale, value);
+     }
+diff --git a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java b/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java
+index 1c1fa62..8d7c374 100644
+--- a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java
++++ b/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java
+@@ -240,13 +240,17 @@ public class Java11Downgrader extends AllVersionDowngrader {
+                                 }
+                                 switch (insn.getOpcode()) {
+                                     case Opcodes.INVOKESTATIC:
+-                                        method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, false));
++                                        method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, methodInsn.itf));
+                                         break;
+                                     case Opcodes.INVOKEVIRTUAL:
+                                         method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, false));
+                                         break;
+                                     case Opcodes.INVOKESPECIAL:
+-                                        method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKESPECIAL, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, false));
++                                        method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKESPECIAL, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, methodInsn.itf));
++                                        break;
++                                    case Opcodes.INVOKEINTERFACE:
++                                        // private interface methods (Java 9+) reach nest mates via invokeinterface
++                                        method.instructions.set(insn, new MethodInsnNode(Opcodes.INVOKEINTERFACE, methodInsn.owner, "jvmdowngrader$nest$" + methodInsn.owner.replace("/", "_") + "$" + methodInsn.name, methodInsn.desc, true));
+                                         break;
+                                     default:
+                                         throw new RuntimeException("Unexpected opcode: " + insn.getOpcode());
+diff --git a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java9Downgrader.java b/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java9Downgrader.java
+index d65be1b..a715d3f 100644
+--- a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java9Downgrader.java
++++ b/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java9Downgrader.java
+@@ -20,6 +20,7 @@ public class Java9Downgrader extends AllVersionDowngrader {
+     public void init() {
+         // -- java.base --
+         stub(J_I_InputStream.class);
++        stub(J_U_C_ForkJoinPool.class);
+         // ObjectInputFilter
+         // ObjectInputStream
+         // ObjectStreamConstants
+diff --git a/javac-plugin/build.gradle.kts b/javac-plugin/build.gradle.kts
+index aeb6a40..2688509 100644
+--- a/javac-plugin/build.gradle.kts
++++ b/javac-plugin/build.gradle.kts
+@@ -1,7 +1,7 @@
+ java {
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(8))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+@@ -24,7 +24,7 @@ tasks.compileTestJava {
+ 
+     javaCompiler = javaToolchains.compilerFor {
+         languageVersion.set(JavaLanguageVersion.of(17))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ 
+     val apiJar = project(":java-api").tasks.named("testJar").get().outputs.files.singleFile
+diff --git a/site/build.gradle.kts b/site/build.gradle.kts
+index d5fadf1..bc06956 100644
+--- a/site/build.gradle.kts
++++ b/site/build.gradle.kts
+@@ -47,7 +47,7 @@ dependencies {
+ java {
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(17))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+diff --git a/testing/build.gradle.kts b/testing/build.gradle.kts
+index 1d6f517..6aa4b84 100644
+--- a/testing/build.gradle.kts
++++ b/testing/build.gradle.kts
+@@ -15,7 +15,7 @@ java {
+     targetCompatibility = testVersion
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(testVersion.majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+@@ -59,7 +59,7 @@ tasks.test {
+     val versions = (testTargetVersion .. testVersion).associateWith {
+         javaToolchains.launcherFor {
+             languageVersion.set(JavaLanguageVersion.of(it.majorVersion))
+-            vendor.set(JvmVendorSpec.AZUL)
++
+         }.get().executablePath.toString()
+     }
+ 
+diff --git a/testing/downgrade/build.gradle.kts b/testing/downgrade/build.gradle.kts
+index 01d452e..4d0974e 100644
+--- a/testing/downgrade/build.gradle.kts
++++ b/testing/downgrade/build.gradle.kts
+@@ -25,7 +25,7 @@ java {
+     targetCompatibility = testVersion
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(testVersion.majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+@@ -34,7 +34,7 @@ tasks.compileJava {
+ 
+     javaCompiler = javaToolchains.compilerFor {
+         languageVersion.set(JavaLanguageVersion.of(testVersion.majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 
+diff --git a/testing/multi-version/build.gradle.kts b/testing/multi-version/build.gradle.kts
+index 66c2a06..b37165d 100644
+--- a/testing/multi-version/build.gradle.kts
++++ b/testing/multi-version/build.gradle.kts
+@@ -14,7 +14,7 @@ java {
+     targetCompatibility = testVersion
+     toolchain {
+         languageVersion.set(JavaLanguageVersion.of(testVersion.majorVersion))
+-        vendor.set(JvmVendorSpec.AZUL)
++
+     }
+ }
+ 

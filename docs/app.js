@@ -31,6 +31,10 @@
   var basePath = new URL(".", location.href).pathname; // e.g. "/paper-in-a-tab/"
   var classpath = "/app" + basePath + "jars/launcher.3.jar:/app" + basePath + "jars/paper-server.445p3.jar";
 
+  // Which server this boot runs: "188" (proven, phone-sized) or "262"
+  // (the AI-ported modern Paper — heavy, desktop-recommended).
+  var version = "188";
+
   // ---- console rendering (batched, ring-buffered) ----
   var pendingLines = [];
   var flushScheduled = false;
@@ -145,25 +149,58 @@
 
   // Fetching the jars up front warms the CDN edge and the browser cache
   // (CheerpJ's ranged reads occasionally hit a cold edge that answers
-  // without Range support), and it gives phones a visible progress number.
-  async function warmJars() {
-    var urls = ["./jars/launcher.3.jar", "./jars/paper-server.445p3.jar"];
-    var total = 0, loaded = 0;
+  // without Range support), and it gives a visible progress number.
+  async function warmJars(urls, totalHint) {
+    var total = totalHint || 0, loaded = 0;
     try {
-      var heads = await Promise.all(urls.map(function (u) { return fetch(u, { method: "HEAD" }); }));
-      heads.forEach(function (h) { total += Number(h.headers.get("content-length")) || 0; });
-      for (var i = 0; i < urls.length; i++) {
-        var res = await fetch(urls[i]);
-        if (!res.ok || !res.body) continue;
-        var reader = res.body.getReader();
-        while (true) {
-          var chunk = await reader.read();
-          if (chunk.done) break;
-          loaded += chunk.value.length;
-          if (total) setState("booting", "downloading " + Math.min(99, Math.round(loaded / total * 100)) + "%");
+      if (!total) {
+        var heads = await Promise.all(urls.map(function (u) { return fetch(u, { method: "HEAD" }); }));
+        heads.forEach(function (h) { total += Number(h.headers.get("content-length")) || 0; });
+      }
+      var queue = urls.slice();
+      async function worker() {
+        while (queue.length) {
+          var u = queue.shift();
+          try {
+            var res = await fetch(u);
+            if (!res.ok || !res.body) continue;
+            var reader = res.body.getReader();
+            while (true) {
+              var chunk = await reader.read();
+              if (chunk.done) break;
+              loaded += chunk.value.length;
+              if (total) setState("booting", "downloading " + Math.min(99, Math.round(loaded / total * 100)) + "%");
+            }
+          } catch (e) { /* per-jar failure is fine; CheerpJ refetches */ }
         }
       }
+      await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
     } catch (e) { /* CheerpJ fetches the jars itself either way */ }
+  }
+
+  async function bootPlan() {
+    if (version === "188") {
+      return {
+        main: "BrowserLauncher",
+        classpath: classpath,
+        userDir: "/files",
+        warm: ["./jars/launcher.3.jar", "./jars/paper-server.445p3.jar"],
+        warmTotal: 0,
+        label: "paper 1.8.8"
+      };
+    }
+    var mf = await (await fetch("./jars26/manifest.json")).json();
+    var cp = mf.jars.map(function (j) { return "/app" + basePath + "jars26/" + j; }).join(":");
+    var total = 0;
+    mf.jars.forEach(function (j) { total += mf.sizes[j] || 0; });
+    return {
+      main: "BrowserLauncher26",
+      classpath: cp,
+      userDir: "/files/v26",
+      warm: mf.jars.map(function (j) { return "./jars26/" + j; }),
+      warmTotal: total,
+      label: "paper 26.2 (AI port)"
+    };
   }
 
   function injectCheerpJ() {
@@ -180,6 +217,9 @@
     setState("loading", "fetching runtime");
     log("[page] fetching the CheerpJ runtime…");
     try {
+      var plan = await bootPlan();
+      $("ver-188").disabled = true;
+      $("ver-262").disabled = true;
       await injectCheerpJ();
       await cheerpjInit({
         version: 8,
@@ -189,18 +229,23 @@
           Java_BrowserLauncher_pollCommand: Java_BrowserLauncher_pollCommand,
           Java_BrowserLauncher_pollOp: Java_BrowserLauncher_pollOp,
           Java_BrowserLauncher_opResult: Java_BrowserLauncher_opResult,
+          Java_BrowserLauncher26_emitLine: Java_BrowserLauncher_emitLine,
+          Java_BrowserLauncher26_pollCommand: Java_BrowserLauncher_pollCommand,
+          Java_BrowserLauncher26_pollOp: Java_BrowserLauncher_pollOp,
+          Java_BrowserLauncher26_opResult: Java_BrowserLauncher_opResult,
           // CheerpJ ships no implementation of this JDK native; -1 is the
           // documented "load average unavailable" answer.
           Java_sun_misc_Unsafe_getLoadAverage: async function (lib, self, loadavg, nelems) { return -1; }
         },
-        javaProperties: ["user.dir=/files", "java.awt.headless=true", "log4j2.formatMsgNoLookups=true"]
+        javaProperties: ["user.dir=" + plan.userDir, "java.awt.headless=true",
+                         "log4j2.formatMsgNoLookups=true", "Paper.IgnoreJavaVersion=true"]
       });
       setState("booting", "downloading jars");
-      log("[page] runtime up. downloading ~21 MB of jars (cached after the first visit)…");
-      await warmJars();
-      log("[page] booting paper 1.8.8 — this takes a minute or two, longer on a phone.");
+      log("[page] runtime up. downloading " + Math.max(21, Math.round(plan.warmTotal / 1048576)) + " MB of jars (cached after the first visit)…");
+      await warmJars(plan.warm, plan.warmTotal);
+      log("[page] booting " + plan.label + " — this takes a while" + (version === "262" ? ", and 26.2 really wants a desktop." : ", longer on a phone."));
       setState("booting");
-      var code = await cheerpjRunMain("BrowserLauncher", classpath);
+      var code = await cheerpjRunMain(plan.main, plan.classpath);
       // cheerpjRunMain resolves when the JVM exits (i.e. after /stop).
       setState("stopped", "powered off");
       log("[page] the jvm has exited (code " + code + "). reload the page to power on again.");
@@ -432,6 +477,19 @@
   });
 
   setState("idle");
+
+  function pickVersion(v) {
+    if (state !== "idle") return;
+    version = v;
+    $("ver-188").classList.toggle("verpick__opt--on", v === "188");
+    $("ver-262").classList.toggle("verpick__opt--on", v === "262");
+    $("ver-188").setAttribute("aria-checked", String(v === "188"));
+    $("ver-262").setAttribute("aria-checked", String(v === "262"));
+    if (v === "262") log("[page] paper 26.2 selected — the AI-ported modern server. big download; a phone will struggle.");
+  }
+  $("ver-188").addEventListener("click", function () { pickVersion("188"); });
+  $("ver-262").addEventListener("click", function () { pickVersion("262"); });
+  if (new URLSearchParams(location.search).get("v") === "262") pickVersion("262");
 
   // ?autoboot=1 powers on immediately (and counts as accepting the EULA) —
   // used for automated testing and boot-me deep links.
