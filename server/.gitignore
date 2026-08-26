@@ -1,0 +1,5 @@
+# build output — the relay is built from source, not committed
+*.exe
+/relay
+/fakehost
+/echotest
