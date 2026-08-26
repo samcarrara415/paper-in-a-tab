@@ -38,6 +38,6 @@ EOF
 
 echo "== splicing configurate record patch"
 (cd cfg-classes && jar uf ../dg/libraries/org/spongepowered/configurate-core/4.2.0/configurate-core-4.2.0.jar \
-  org/spongepowered/configurate/objectmapping/ObjectFieldDiscoverer*.class)
+  org/spongepowered/configurate/objectmapping/ObjectFieldDiscoverer*.class org/spongepowered/configurate/loader/AtomicFiles*.class)
 
 echo "== rebuild complete"

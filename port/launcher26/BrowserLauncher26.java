@@ -26,7 +26,31 @@ public class BrowserLauncher26 {
         // The 26.2 port lives in its own directory so the 1.8.8 world and
         // configs in /files are untouched.
         new File(System.getProperty("user.dir", ".")).mkdirs();
+        // A boot that crashed during world creation leaves a world dir with
+        // no level.dat; the next boot would die on the half-written files.
+        // NOTE: CheerpJ's java.io.File cannot see NIO-created entries, and the
+        // modern server is NIO throughout — every file operation in this
+        // launcher must therefore use java.nio.
+        java.nio.file.Path world = java.nio.file.Paths.get("world").toAbsolutePath();
+        if (java.nio.file.Files.isDirectory(world) && !worldLooksUsable(world)) {
+            send("[launcher] removing broken world left by a crashed boot");
+            deleteRecNio(world);
+        }
         writeDefaultConfigs();
+        send("[launcher] cwd io=" + new File(".").getAbsolutePath()
+                + " nio=" + java.nio.file.Paths.get("").toAbsolutePath());
+        String rel = "./world/dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat";
+        if (new File(rel).exists()) {
+            try {
+                InputStream in = java.nio.file.Files.newInputStream(java.nio.file.Paths.get(rel));
+                int n = 0;
+                while (in.read() >= 0) n++;
+                in.close();
+                send("[launcher] rel-path nio read ok, bytes=" + n);
+            } catch (Throwable t) {
+                send("[launcher] rel-path nio read FAILED: " + t);
+            }
+        }
         hookLog4j();
         if (NATIVES) {
             System.setOut(new PrintStream(new LineTee(realOut), true, "UTF-8"));
@@ -36,7 +60,8 @@ public class BrowserLauncher26 {
         Thread boot = new Thread(new Runnable() {
             public void run() {
                 try {
-                    org.bukkit.craftbukkit.Main.main(new String[]{"nogui", "--noconsole"});
+                    org.bukkit.craftbukkit.Main.main(new String[]{"nogui", "--noconsole",
+                            "--universe", System.getProperty("user.dir", ".")});
                 } catch (Throwable t) {
                     StringWriter sw = new StringWriter();
                     t.printStackTrace(new PrintWriter(sw));
@@ -121,11 +146,13 @@ public class BrowserLauncher26 {
 
     // ---- first-boot configuration ---------------------------------------
 
-    static final int CONFIG_VERSION = 1;
+    static final int CONFIG_VERSION = 3;
 
     static void writeDefaultConfigs() throws IOException {
         boolean upgrade = readConfigVersion() < CONFIG_VERSION;
-        writeConfig("eula.txt", "eula=true\n", upgrade);
+        // Always rewritten: a failed load makes the server clobber it with
+        // eula=false, and that must never survive into the next boot.
+        writeConfig("eula.txt", "eula=true\n", true);
         writeConfig("server.properties",
                 "level-type=minecraft\\:flat\n" +
                 "online-mode=false\n" +
@@ -141,6 +168,10 @@ public class BrowserLauncher26 {
                 "ticks-per:\n  autosave: 3000\n", upgrade);
         writeConfig("spigot.yml",
                 "settings:\n  timeout-time: 600\n  restart-on-crash: false\n", upgrade);
+        // spark's sampler NPE-loops without a real ThreadMXBean.
+        java.nio.file.Files.createDirectories(java.nio.file.Paths.get("config").toAbsolutePath());
+        writeConfig("config/paper-global.yml",
+                "spark:\n  enabled: false\n  enable-immediately: false\n", upgrade);
         if (upgrade) {
             Writer w = new OutputStreamWriter(new FileOutputStream(".pit-config-version"), StandardCharsets.UTF_8);
             w.write(String.valueOf(CONFIG_VERSION));
@@ -152,7 +183,7 @@ public class BrowserLauncher26 {
     static int readConfigVersion() {
         try {
             BufferedReader r = new BufferedReader(new InputStreamReader(
-                    new FileInputStream(".pit-config-version"), StandardCharsets.UTF_8));
+                    java.nio.file.Files.newInputStream(java.nio.file.Paths.get(".pit-config-version").toAbsolutePath()), StandardCharsets.UTF_8));
             String s = r.readLine();
             r.close();
             return Integer.parseInt(s.trim());
@@ -163,11 +194,21 @@ public class BrowserLauncher26 {
 
     static void writeConfig(String name, String content, boolean force) throws IOException {
         File f = new File(name);
-        if (force || !f.exists()) {
-            Writer w = new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8);
-            w.write(content);
-            w.close();
+        if (!force && f.exists()) {
+            return;
         }
+        // CheerpJ quirk: FileOutputStream truncation of an existing IDB-backed
+        // file can silently keep the old bytes. Delete + NIO write + verify.
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        java.nio.file.Path path = f.getAbsoluteFile().toPath();
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try { java.nio.file.Files.deleteIfExists(path); } catch (IOException ignored) {}
+            java.nio.file.Files.write(path, bytes);
+            try {
+                if (java.util.Arrays.equals(java.nio.file.Files.readAllBytes(path), bytes)) return;
+            } catch (IOException ignored) {}
+        }
+        send("[launcher] warning: " + name + " did not verify after write");
     }
 
     // ---- file manager ops (hand-rolled JSON) -----------------------------
@@ -210,39 +251,45 @@ public class BrowserLauncher26 {
         try {
             id = Long.parseLong(jget(json, "id"));
             String op = jget(json, "op");
-            File root = new File(".").getCanonicalFile();
+            java.nio.file.Path root = java.nio.file.Paths.get("").toAbsolutePath();
             res.append("{\"id\":").append(id);
             if ("list".equals(op)) {
-                File dir = resolve(root, jget(json, "path"));
+                java.nio.file.Path dir = resolveNio(root, jget(json, "path"));
                 res.append(",\"entries\":[");
-                File[] kids = dir.listFiles();
                 boolean first = true;
-                if (kids != null) for (File k : kids) {
-                    if (!first) res.append(',');
-                    first = false;
-                    res.append("{\"name\":").append(jstr(k.getName()))
-                       .append(",\"dir\":").append(k.isDirectory())
-                       .append(",\"size\":").append(k.isDirectory() ? 0 : k.length()).append('}');
+                if (java.nio.file.Files.isDirectory(dir)) {
+                    java.nio.file.DirectoryStream<java.nio.file.Path> kids = java.nio.file.Files.newDirectoryStream(dir);
+                    for (java.nio.file.Path k : kids) {
+                        if (!first) res.append(',');
+                        first = false;
+                        boolean isDir = java.nio.file.Files.isDirectory(k);
+                        long size = 0;
+                        try { if (!isDir) size = java.nio.file.Files.size(k); } catch (IOException ignored) {}
+                        res.append("{\"name\":").append(jstr(k.getFileName().toString()))
+                           .append(",\"dir\":").append(isDir)
+                           .append(",\"size\":").append(size).append('}');
+                    }
+                    kids.close();
                 }
                 res.append(']');
             } else if ("read".equals(op)) {
-                File f = resolve(root, jget(json, "path"));
-                if (f.length() > 20L * 1024 * 1024) throw new IOException("file too large");
-                res.append(",\"b64\":").append(jstr(java.util.Base64.getEncoder().encodeToString(readAll(f))));
+                java.nio.file.Path f = resolveNio(root, jget(json, "path"));
+                if (java.nio.file.Files.size(f) > 20L * 1024 * 1024) throw new IOException("file too large");
+                res.append(",\"b64\":").append(jstr(java.util.Base64.getEncoder()
+                        .encodeToString(java.nio.file.Files.readAllBytes(f))));
             } else if ("write".equals(op)) {
-                File f = resolve(root, jget(json, "path"));
-                if (f.getParentFile() != null) f.getParentFile().mkdirs();
-                FileOutputStream fo = new FileOutputStream(f);
-                fo.write(java.util.Base64.getDecoder().decode(jget(json, "b64")));
-                fo.close();
+                java.nio.file.Path f = resolveNio(root, jget(json, "path"));
+                if (f.getParent() != null) java.nio.file.Files.createDirectories(f.getParent());
+                java.nio.file.Files.deleteIfExists(f);
+                java.nio.file.Files.write(f, java.util.Base64.getDecoder().decode(jget(json, "b64")));
             } else if ("mkdir".equals(op)) {
-                resolve(root, jget(json, "path")).mkdirs();
+                java.nio.file.Files.createDirectories(resolveNio(root, jget(json, "path")));
             } else if ("delete".equals(op)) {
-                deleteRec(resolve(root, jget(json, "path")));
+                deleteRecNio(resolveNio(root, jget(json, "path")));
             } else if ("export".equals(op)) {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 ZipOutputStream zos = new ZipOutputStream(bos);
-                zipDir(root, root, zos);
+                zipDirNio(root, root, zos);
                 zos.close();
                 res.append(",\"b64\":").append(jstr(java.util.Base64.getEncoder().encodeToString(bos.toByteArray())));
             } else if ("stop".equals(op)) {
@@ -261,39 +308,60 @@ public class BrowserLauncher26 {
         else realOut.println("[OP] " + res);
     }
 
-    static File resolve(File root, String rel) throws IOException {
-        File f = new File(root, rel).getCanonicalFile();
-        if (!f.getPath().startsWith(root.getPath())) throw new IOException("path escapes root");
+    static java.nio.file.Path resolveNio(java.nio.file.Path root, String rel) throws IOException {
+        while (rel.startsWith("/")) rel = rel.substring(1);
+        java.nio.file.Path f = root.resolve(rel).normalize();
+        if (!f.startsWith(root)) throw new IOException("path escapes root");
         return f;
     }
 
-    static byte[] readAll(File f) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        FileInputStream is = new FileInputStream(f);
-        byte[] buf = new byte[8192];
-        int n;
-        while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
-        is.close();
-        return bos.toByteArray();
-    }
-
-    static void deleteRec(File f) {
-        File[] kids = f.listFiles();
-        if (kids != null) for (File k : kids) deleteRec(k);
-        f.delete();
-    }
-
-    static void zipDir(File root, File dir, ZipOutputStream zos) throws IOException {
-        File[] kids = dir.listFiles();
-        if (kids == null) return;
-        for (File k : kids) {
-            String rel = root.toURI().relativize(k.toURI()).getPath();
-            if (k.isDirectory()) zipDir(root, k, zos);
-            else {
-                zos.putNextEntry(new ZipEntry(rel));
-                zos.write(readAll(k));
+    static void zipDirNio(java.nio.file.Path root, java.nio.file.Path dir, ZipOutputStream zos) throws IOException {
+        if (!java.nio.file.Files.isDirectory(dir)) return;
+        java.nio.file.DirectoryStream<java.nio.file.Path> kids = java.nio.file.Files.newDirectoryStream(dir);
+        for (java.nio.file.Path k : kids) {
+            if (java.nio.file.Files.isDirectory(k)) {
+                zipDirNio(root, k, zos);
+            } else {
+                zos.putNextEntry(new ZipEntry(root.relativize(k).toString()));
+                zos.write(java.nio.file.Files.readAllBytes(k));
                 zos.closeEntry();
             }
         }
+        kids.close();
     }
+
+    static boolean worldLooksUsable(java.nio.file.Path world) {
+        if (!java.nio.file.Files.exists(world.resolve("level.dat"))) {
+            return false;
+        }
+        // An unreadable, empty, or missing world_gen_settings.dat makes the
+        // load die on "Overworld settings missing" — happens when a boot
+        // crashed before the browser filesystem flushed.
+        java.nio.file.Path wgs = world.resolve("dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat");
+        try {
+            byte[] raw = java.nio.file.Files.readAllBytes(wgs);
+            if (raw.length == 0) {
+                return false;
+            }
+            InputStream in = new java.util.zip.GZIPInputStream(new ByteArrayInputStream(raw));
+            byte[] buf = new byte[8192];
+            while (in.read(buf) > 0) { /* drain */ }
+            in.close();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    static void deleteRecNio(java.nio.file.Path p) {
+        try {
+            if (java.nio.file.Files.isDirectory(p)) {
+                java.nio.file.DirectoryStream<java.nio.file.Path> kids = java.nio.file.Files.newDirectoryStream(p);
+                for (java.nio.file.Path k : kids) deleteRecNio(k);
+                kids.close();
+            }
+            java.nio.file.Files.deleteIfExists(p);
+        } catch (Throwable ignored) {}
+    }
+
 }

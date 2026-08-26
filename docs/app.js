@@ -235,10 +235,41 @@
           Java_BrowserLauncher26_opResult: Java_BrowserLauncher_opResult,
           // CheerpJ ships no implementation of this JDK native; -1 is the
           // documented "load average unavailable" answer.
-          Java_sun_misc_Unsafe_getLoadAverage: async function (lib, self, loadavg, nelems) { return -1; }
+          Java_sun_misc_Unsafe_getLoadAverage: async function (lib, self, loadavg, nelems) { return -1; },
+          // Missing type-annotation natives: null means "none", which the
+          // JDK's annotation parser accepts. Paper's config mapper trips these.
+          Java_java_lang_reflect_Field_getTypeAnnotationBytes0: async function (lib, self) { return null; },
+          Java_java_lang_reflect_Method_getTypeAnnotationBytes0: async function (lib, self) { return null; },
+          Java_java_lang_reflect_Constructor_getTypeAnnotationBytes0: async function (lib, self) { return null; },
+          // CheerpJ implements the plain Unsafe accessors but not the
+          // volatile ones (reflection on final fields uses them). Its
+          // threading is cooperative, so plain semantics are equivalent.
+          Java_sun_misc_Unsafe_putObjectVolatile: async function (lib, self, o, off, x) { return await self.putObject(o, off, x); },
+          Java_sun_misc_Unsafe_putBooleanVolatile: async function (lib, self, o, off, x) { return await self.putBoolean(o, off, x); },
+          Java_sun_misc_Unsafe_putByteVolatile: async function (lib, self, o, off, x) { return await self.putByte(o, off, x); },
+          Java_sun_misc_Unsafe_putShortVolatile: async function (lib, self, o, off, x) { return await self.putShort(o, off, x); },
+          Java_sun_misc_Unsafe_putCharVolatile: async function (lib, self, o, off, x) { return await self.putChar(o, off, x); },
+          Java_sun_misc_Unsafe_putIntVolatile: async function (lib, self, o, off, x) { return await self.putInt(o, off, x); },
+          Java_sun_misc_Unsafe_putLongVolatile: async function (lib, self, o, off, x) { return await self.putLong(o, off, x); },
+          Java_sun_misc_Unsafe_putFloatVolatile: async function (lib, self, o, off, x) { return await self.putFloat(o, off, x); },
+          Java_sun_misc_Unsafe_putDoubleVolatile: async function (lib, self, o, off, x) { return await self.putDouble(o, off, x); },
+          Java_sun_misc_Unsafe_getObjectVolatile: async function (lib, self, o, off) { return await self.getObject(o, off); },
+          Java_sun_misc_Unsafe_getBooleanVolatile: async function (lib, self, o, off) { return await self.getBoolean(o, off); },
+          Java_sun_misc_Unsafe_getByteVolatile: async function (lib, self, o, off) { return await self.getByte(o, off); },
+          Java_sun_misc_Unsafe_getShortVolatile: async function (lib, self, o, off) { return await self.getShort(o, off); },
+          Java_sun_misc_Unsafe_getCharVolatile: async function (lib, self, o, off) { return await self.getChar(o, off); },
+          Java_sun_misc_Unsafe_getIntVolatile: async function (lib, self, o, off) { return await self.getInt(o, off); },
+          Java_sun_misc_Unsafe_getLongVolatile: async function (lib, self, o, off) { return await self.getLong(o, off); },
+          Java_sun_misc_Unsafe_getFloatVolatile: async function (lib, self, o, off) { return await self.getFloat(o, off); },
+          Java_sun_misc_Unsafe_getDoubleVolatile: async function (lib, self, o, off) { return await self.getDouble(o, off); }
         },
         javaProperties: ["user.dir=" + plan.userDir, "java.awt.headless=true",
-                         "log4j2.formatMsgNoLookups=true", "Paper.IgnoreJavaVersion=true"]
+                         "log4j2.formatMsgNoLookups=true", "Paper.IgnoreJavaVersion=true",
+                         // netty's Unsafe/cleaner probing goes through MethodHandle
+                         // paths that crash CheerpJ's invoker; heap buffers are the
+                         // right choice inside a browser tab anyway.
+                         "io.netty.noUnsafe=true", "io.netty.noPreferDirect=true",
+                         "io.netty.transport.noNative=true"]
       });
       setState("booting", "downloading jars");
       log("[page] runtime up. downloading " + Math.max(21, Math.round(plan.warmTotal / 1048576)) + " MB of jars (cached after the first visit)…");

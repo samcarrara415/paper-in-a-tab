@@ -60,8 +60,20 @@ Paper.IgnoreJavaVersion=true; 26.2 works in /files/v26 (1.8.8 owns /files).
 - "Failed to get system info for Memory" NPEs — ManagementFactory heap beans
   unimplemented in CheerpJ; warn-level only.
 
+## CheerpJ-specific findings (browser only)
+
+- MethodHandle.linkToInterface throws ArrayIndexOutOfBounds in CheerpJ's
+  invoker — hit by netty's probing (estimateMaxDirectMemory, CleanerJava6).
+  Both patched out (Patcher26 netty/cleaner modes) + io.netty.noUnsafe=true.
+- FileOutputStream truncate-overwrite of an existing /files (IDB) file keeps
+  the old bytes. launcher26 writeConfig now deletes + NIO-writes + verifies.
+  This also explains the one-time "Failed to load eula.txt" → server clobbered
+  eula to false → persisted. eula.txt is force-rewritten every boot now.
+- com.sun.security.auth.module.UnixSystem needs the jaas_unix native —
+  Paper's ServerEnvironment root check. Patched clinit (serverenv mode).
+
 ## State
 
 - JDK 8 local: boots, commands work, clean shutdown.
-- CheerpJ: bootstrap + config + registries load; netty estimateMaxDirectMemory
+- CheerpJ: FULLY WORKING — boots to Done in ~40s (M-series desktop), commands, clean stop, world persistence across reloads all verified locally.
   patched; currently verifying full boot in browser.

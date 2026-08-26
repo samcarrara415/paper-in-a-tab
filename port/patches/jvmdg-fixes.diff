@@ -384,6 +384,46 @@ index a28bf28..a5ae6a3 100644
          checkArray(owner, index, double.class);
          unsafe.putDouble(owner, fieldOffset + index * arrayIndexScale, value);
      }
+diff --git a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_StackWalker.java b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_StackWalker.java
+index db79a2f..d002f83 100644
+--- a/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_StackWalker.java
++++ b/java-api/src/java9/java/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_L_StackWalker.java
+@@ -75,7 +75,19 @@ public class J_L_StackWalker {
+             if (isReflectionFrame(stackTrace[i].getClassName())) {
+                 classRefOffset.addAndGet(-1);
+             }
+-            frame.classRef = classRef[i + classRefOffset.get()];
++            // CheerpJ's stack trace and class context arrays have different
++            // shapes; fall back to resolving by name instead of overrunning.
++            int ci = i + classRefOffset.get();
++            if (ci >= 0 && ci < classRef.length) {
++                frame.classRef = classRef[ci];
++            } else {
++                try {
++                    frame.classRef = Class.forName(stackTrace[i].getClassName(), false,
++                            J_L_StackWalker.class.getClassLoader());
++                } catch (Throwable t) {
++                    frame.classRef = null;
++                }
++            }
+             return (StackFrame) frame;
+         }).filter(e -> {
+             if (showHidden) {
+@@ -158,7 +170,13 @@ public class J_L_StackWalker {
+             if (classRef != null) {
+                 return classRef;
+             }
+-            throw new UnsupportedOperationException("This stack walker does not have RETAIN_CLASS_REFERENCE access");
++            // Best effort on runtimes whose class-context arrays are
++            // unreliable (CheerpJ): resolve by name, else a stand-in.
++            try {
++                return Class.forName(element.getClassName(), false, J_L_StackWalker.class.getClassLoader());
++            } catch (Throwable t) {
++                return Object.class;
++            }
+         }
+ 
+         @Override
 diff --git a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java b/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java
 index 1c1fa62..8d7c374 100644
 --- a/java-api/src/main/java/xyz/wagyourtail/jvmdg/providers/Java11Downgrader.java

@@ -25,11 +25,20 @@ public class Patcher26 {
 
         if (mode.equals("bind")) {
             entry = "net/minecraft/server/network/ServerConnectionListener.class";
-            patched = transform(read(jar, entry), new BodySwap("startTcpServerListener", "(Ljava/net/InetAddress;I)V") {
+            byte[] cls = read(jar, entry);
+            cls = transform(cls, new BodySwap("startTcpServerListener", "(Ljava/net/InetAddress;I)V") {
                 void body(MethodVisitor mv) {
                     mv.visitCode();
                     mv.visitInsn(Opcodes.RETURN);
                     mv.visitMaxs(0, 3);
+                    mv.visitEnd();
+                }
+            });
+            patched = transform(cls, new BodySwap("startTcpServerListener", "(Ljava/net/SocketAddress;)V") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode();
+                    mv.visitInsn(Opcodes.RETURN);
+                    mv.visitMaxs(0, 2);
                     mv.visitEnd();
                 }
             });
@@ -63,6 +72,45 @@ public class Patcher26 {
                     mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Runtime", "maxMemory", "()J", false);
                     mv.visitInsn(Opcodes.LRETURN);
                     mv.visitMaxs(2, 0);
+                    mv.visitEnd();
+                }
+            });
+        } else if (mode.equals("cleaner")) {
+            // CleanerJava6's probing MethodHandles crash CheerpJ's invoker.
+            // Leave CLEAN_METHOD null: isSupported() reads false and netty
+            // falls back to its no-op cleaner.
+            entry = "io/netty/util/internal/CleanerJava6.class";
+            patched = transform(read(jar, entry), new BodySwap("<clinit>", "()V") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode();
+                    mv.visitLdcInsn(Type.getObjectType("io/netty/util/internal/CleanerJava6"));
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "io/netty/util/internal/logging/InternalLoggerFactory",
+                            "getInstance", "(Ljava/lang/Class;)Lio/netty/util/internal/logging/InternalLogger;", false);
+                    mv.visitFieldInsn(Opcodes.PUTSTATIC, "io/netty/util/internal/CleanerJava6",
+                            "logger", "Lio/netty/util/internal/logging/InternalLogger;");
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    mv.visitFieldInsn(Opcodes.PUTSTATIC, "io/netty/util/internal/CleanerJava6",
+                            "CLEAN_METHOD", "Ljava/lang/invoke/MethodHandle;");
+                    mv.visitInsn(Opcodes.RETURN);
+                    mv.visitMaxs(1, 0);
+                    mv.visitEnd();
+                }
+            });
+        } else if (mode.equals("serverenv")) {
+            // The root-user check instantiates com.sun.security.auth.module
+            // .UnixSystem, which needs the jaas_unix native. A tab is not root.
+            entry = "io/papermc/paper/util/ServerEnvironment.class";
+            patched = transform(read(jar, entry), new BodySwap("<clinit>", "()V") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode();
+                    mv.visitInsn(Opcodes.ICONST_0);
+                    mv.visitFieldInsn(Opcodes.PUTSTATIC, "io/papermc/paper/util/ServerEnvironment",
+                            "RUNNING_AS_ROOT_OR_ADMIN", "Z");
+                    mv.visitLdcInsn("S-1-16-12288");
+                    mv.visitFieldInsn(Opcodes.PUTSTATIC, "io/papermc/paper/util/ServerEnvironment",
+                            "WINDOWS_HIGH_INTEGRITY_LEVEL", "Ljava/lang/String;");
+                    mv.visitInsn(Opcodes.RETURN);
+                    mv.visitMaxs(1, 0);
                     mv.visitEnd();
                 }
             });
