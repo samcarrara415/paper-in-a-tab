@@ -25,7 +25,11 @@ public class BrowserLauncher26 {
         realOut = System.out;
         // The 26.2 port lives in its own directory so the 1.8.8 world and
         // configs in /files are untouched.
-        new File(System.getProperty("user.dir", ".")).mkdirs();
+        try {
+            java.nio.file.Files.createDirectories(java.nio.file.Paths.get(System.getProperty("user.dir", ".")));
+        } catch (Throwable t) {
+            send("[launcher] could not create working dir: " + t);
+        }
         // A boot that crashed during world creation leaves a world dir with
         // no level.dat; the next boot would die on the half-written files.
         // NOTE: CheerpJ's java.io.File cannot see NIO-created entries, and the
@@ -36,7 +40,11 @@ public class BrowserLauncher26 {
             send("[launcher] removing broken world left by a crashed boot");
             deleteRecNio(world);
         }
-        writeDefaultConfigs();
+        try {
+            writeDefaultConfigs();
+        } catch (Throwable t) {
+            send("[launcher] config setup failed: " + t);
+        }
         send("[launcher] cwd io=" + new File(".").getAbsolutePath()
                 + " nio=" + java.nio.file.Paths.get("").toAbsolutePath());
         String rel = "./world/dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat";
@@ -72,30 +80,57 @@ public class BrowserLauncher26 {
         boot.start();
 
         BufferedReader stdin = NATIVES ? null : new BufferedReader(new InputStreamReader(System.in));
-        boolean spawnRuleApplied = false;
+        boolean hooked = false;
+        // Safari's scheduler starves background threads while the server
+        // thread is busy, so once the server exists the bridge is pumped from
+        // inside the tick loop itself (addTickable). This thread only
+        // bootstraps the hook and then acts as a slow fallback.
         while (true) {
-            String cmd = NATIVES ? pollCommand() : (stdin.ready() ? stdin.readLine() : null);
-            if (cmd != null && !cmd.trim().isEmpty()) {
-                MinecraftServer srv = MinecraftServer.getServer();
-                if (srv instanceof DedicatedServer && srv.isRunning()) {
+            MinecraftServer srv = MinecraftServer.getServer();
+            if (!hooked && srv instanceof DedicatedServer && srv.isRunning()) {
+                final DedicatedServer ds = (DedicatedServer) srv;
+                ds.addTickable(new Runnable() {
+                    public void run() {
+                        pump(ds);
+                    }
+                });
+                ds.handleConsoleInput("gamerule spawnChunkRadius 0", ds.createCommandSourceStack());
+                send("[launcher] bridge pump attached to the tick loop");
+                hooked = true;
+            }
+            if (!NATIVES) {
+                String cmd = stdin.ready() ? stdin.readLine() : null;
+                if (cmd != null && !cmd.trim().isEmpty() && srv instanceof DedicatedServer && srv.isRunning()) {
                     ((DedicatedServer) srv).handleConsoleInput(cmd.trim(), srv.createCommandSourceStack());
-                } else {
+                }
+            } else if (!hooked) {
+                // pre-ready: answer file ops so the page does not time out
+                String op = pollOp();
+                if (op != null) handleOp(op);
+                String cmd = pollCommand();
+                if (cmd != null && !cmd.trim().isEmpty()) {
                     send("[launcher] server is not ready for commands yet");
                 }
             }
-            if (!spawnRuleApplied) {
-                MinecraftServer srv = MinecraftServer.getServer();
-                if (srv instanceof DedicatedServer && srv.isRunning()) {
-                    // no spawn chunks -> a playerless server ticks almost nothing
-                    ((DedicatedServer) srv).handleConsoleInput("gamerule spawnChunkRadius 0", srv.createCommandSourceStack());
-                    spawnRuleApplied = true;
+            Thread.sleep(hooked ? 5000 : 500);
+        }
+    }
+
+    /** Runs on the server thread, every tick. */
+    static void pump(DedicatedServer ds) {
+        try {
+            String cmd;
+            while ((cmd = pollCommand()) != null) {
+                if (!cmd.trim().isEmpty()) {
+                    ds.handleConsoleInput(cmd.trim(), ds.createCommandSourceStack());
                 }
             }
-            if (NATIVES) {
-                String op = pollOp();
-                if (op != null) handleOp(op);
+            String op = pollOp();
+            if (op != null) {
+                handleOp(op);
             }
-            Thread.sleep(250);
+        } catch (Throwable t) {
+            send("[launcher] pump error: " + t);
         }
     }
 
@@ -223,6 +258,9 @@ public class BrowserLauncher26 {
         // file can silently keep the old bytes. Delete + NIO write + verify.
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         java.nio.file.Path path = f.getAbsoluteFile().toPath();
+        if (path.getParent() != null) {
+            java.nio.file.Files.createDirectories(path.getParent());
+        }
         for (int attempt = 0; attempt < 3; attempt++) {
             try { java.nio.file.Files.deleteIfExists(path); } catch (IOException ignored) {}
             java.nio.file.Files.write(path, bytes);

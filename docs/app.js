@@ -48,7 +48,27 @@
     return "";
   }
 
+  // ?report=1 beacons every console line to a local collector — used when
+  // driving the page inside the iOS simulator, where devtools are out of reach.
+  var reportMode = new URLSearchParams(location.search).has("report");
+  function report(line) {
+    if (!reportMode) return;
+    try { navigator.sendBeacon("http://localhost:8898/log", line); } catch (e) {}
+  }
+  if (reportMode) {
+    ["log", "warn", "error"].forEach(function (k) {
+      var orig = console[k].bind(console);
+      console[k] = function () {
+        try { report("[console." + k + "] " + Array.prototype.map.call(arguments, String).join(" ").slice(0, 400)); } catch (e) {}
+        orig.apply(null, arguments);
+      };
+    });
+    window.addEventListener("error", function (e) { report("[window.error] " + e.message + " @ " + e.filename + ":" + e.lineno); });
+    window.addEventListener("unhandledrejection", function (e) { report("[unhandledrejection] " + String(e.reason).slice(0, 300)); });
+  }
+
   function log(line) {
+    report(line);
     pendingLines.push(line);
     if (!flushScheduled) {
       flushScheduled = true;

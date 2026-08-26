@@ -76,3 +76,21 @@ Paper.IgnoreJavaVersion=true; 26.2 works in /files/v26 (1.8.8 owns /files).
 
 - JDK 8 local: boots, commands work, clean shutdown.
 - CheerpJ: FULLY WORKING — boots to Done in ~40s (M-series desktop), commands, clean stop, world persistence across reloads all verified locally.
+
+## Mobile 26.2 round (Aug 26)
+
+- Measured: 26.2 running uses ~662 MB JS heap on desktop Chromium — inside
+  modern-phone budgets. CPU is the constraint, not memory.
+- iOS WebKit verified via simulator against localhost (sim shares host
+  localhost; ?report=1 beacons every page/console line to a local collector
+  on :8898 — see docs/app.js report mode + /tmp/logserver.py pattern).
+- Fresh-boot bug (all platforms): paper-world-defaults.yml written before
+  config/ existed → clean exit 0 before any Java log line. writeConfig now
+  creates parents; main() reports config failures instead of dying.
+- Safari starves background Java threads while the server thread is busy:
+  the 250ms polling loop never ran → commands/file ops timed out. Fix:
+  MinecraftServer.addTickable pumps the bridge from inside the tick loop
+  (launcher26 v5). MAX_PRIORITY on the poll thread was tried first and
+  starved the *boot* instead — do not use priorities under CheerpJ.
+- Results (iPhone 17 sim, real WebKit): 26.2 boots Done in 80–145s, commands
+  work via tick pump, world persists across Safari relaunch.
