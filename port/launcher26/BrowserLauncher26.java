@@ -72,6 +72,7 @@ public class BrowserLauncher26 {
         boot.start();
 
         BufferedReader stdin = NATIVES ? null : new BufferedReader(new InputStreamReader(System.in));
+        boolean spawnRuleApplied = false;
         while (true) {
             String cmd = NATIVES ? pollCommand() : (stdin.ready() ? stdin.readLine() : null);
             if (cmd != null && !cmd.trim().isEmpty()) {
@@ -80,6 +81,14 @@ public class BrowserLauncher26 {
                     ((DedicatedServer) srv).handleConsoleInput(cmd.trim(), srv.createCommandSourceStack());
                 } else {
                     send("[launcher] server is not ready for commands yet");
+                }
+            }
+            if (!spawnRuleApplied) {
+                MinecraftServer srv = MinecraftServer.getServer();
+                if (srv instanceof DedicatedServer && srv.isRunning()) {
+                    // no spawn chunks -> a playerless server ticks almost nothing
+                    ((DedicatedServer) srv).handleConsoleInput("gamerule spawnChunkRadius 0", srv.createCommandSourceStack());
+                    spawnRuleApplied = true;
                 }
             }
             if (NATIVES) {
@@ -146,7 +155,7 @@ public class BrowserLauncher26 {
 
     // ---- first-boot configuration ---------------------------------------
 
-    static final int CONFIG_VERSION = 3;
+    static final int CONFIG_VERSION = 4;
 
     static void writeDefaultConfigs() throws IOException {
         boolean upgrade = readConfigVersion() < CONFIG_VERSION;
@@ -160,14 +169,27 @@ public class BrowserLauncher26 {
                 "view-distance=2\n" +
                 "simulation-distance=2\n" +
                 "max-tick-time=-1\n" +
+                // per-chunk fsync over IndexedDB is brutal; batched writes only
+                "sync-chunk-writes=false\n" +
                 "max-players=5\n" +
                 "spawn-protection=0\n" +
                 "motd=Paper 26.2 in a tab (AI port)\n", upgrade);
         writeConfig("bukkit.yml",
                 "settings:\n  allow-end: false\n  shutdown-message: Server closed\n" +
-                "ticks-per:\n  autosave: 3000\n", upgrade);
+                "spawn-limits:\n  monsters: 15\n  animals: 4\n  water-animals: 2\n  ambient: 1\n" +
+                "ticks-per:\n  animal-spawns: 400\n  monster-spawns: 4\n  autosave: 3000\n" +
+                "chunk-gc:\n  period-in-ticks: 300\n", upgrade);
         writeConfig("spigot.yml",
-                "settings:\n  timeout-time: 600\n  restart-on-crash: false\n", upgrade);
+                "settings:\n  timeout-time: 600\n  restart-on-crash: false\n" +
+                "world-settings:\n  default:\n" +
+                "    mob-spawn-range: 2\n" +
+                "    entity-activation-range:\n      animals: 8\n      monsters: 12\n      raiders: 16\n      misc: 2\n" +
+                "    entity-tracking-range:\n      players: 32\n      animals: 24\n      monsters: 24\n      misc: 16\n      other: 32\n", upgrade);
+        writeConfig("config/paper-world-defaults.yml",
+                "chunks:\n  max-auto-save-chunks-per-tick: 8\n" +
+                "collisions:\n  max-entity-collisions: 2\n" +
+                "tick-rates:\n  mob-spawner: 2\n" +
+                "misc:\n  redstone-implementation: ALTERNATE_CURRENT\n", upgrade);
         // spark's sampler NPE-loops without a real ThreadMXBean.
         java.nio.file.Files.createDirectories(java.nio.file.Paths.get("config").toAbsolutePath());
         writeConfig("config/paper-global.yml",

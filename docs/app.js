@@ -516,7 +516,7 @@
     $("ver-262").classList.toggle("verpick__opt--on", v === "262");
     $("ver-188").setAttribute("aria-checked", String(v === "188"));
     $("ver-262").setAttribute("aria-checked", String(v === "262"));
-    if (v === "262") log("[page] paper 26.2 selected — the AI-ported modern server. big download; a phone will struggle.");
+    if (v === "262") log("[page] paper 26.2 selected — the AI-ported modern server. ~111 MB download; recent phones can run it.");
   }
   $("ver-188").addEventListener("click", function () { pickVersion("188"); });
   $("ver-262").addEventListener("click", function () { pickVersion("262"); });
