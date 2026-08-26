@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Paper in a tab — a Minecraft server racked inside this page</title>
+  <meta name="description" content="A real Paper 1.8.8 Minecraft server booted by CheerpJ, a JVM in WebAssembly, inside this browser tab. World saved in browser storage. An AI remake of the Lodeway Labs experiment, hosted on GitHub Pages.">
+  <meta name="theme-color" content="#101418">
+  <meta property="og:title" content="Paper in a tab">
+  <meta property="og:description" content="A real Paper Minecraft server running inside a browser tab, remade by AI and hosted on GitHub Pages.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23101418'/%3E%3Ccircle cx='8' cy='8' r='3.2' fill='%235BE26E'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css?v=3">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead__id">
+    <span class="masthead__mark" aria-hidden="true"></span>
+    <span class="masthead__name">paper‑in‑a‑tab</span>
+    <span class="masthead__unit">AI remake unit</span>
+  </div>
+  <nav class="masthead__nav" aria-label="Site">
+    <a href="https://paper.labs.lodeway.app" target="_blank" rel="noopener">team build</a>
+    <a id="repo-link" href="https://github.com/samcarrara415/paper-in-a-tab" target="_blank" rel="noopener">source</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="hero__eyebrow">rack manifest · one occupied bay, one empty</p>
+    <h1 class="hero__title">A real Minecraft server,<br>racked inside this tab.</h1>
+    <p class="hero__lede">
+      This page boots <strong>Paper 1.8.8</strong> — actual server software, not a simulation — on
+      <a href="https://cheerpj.com" target="_blank" rel="noopener">CheerpJ</a>, a Java virtual machine
+      compiled to WebAssembly. The tick loop, chunk generation, and commands all run here, in your
+      browser. The world is written to this browser's storage and survives a reload.
+    </p>
+    <ul class="hero__facts" aria-label="Vitals">
+      <li><span class="fact__num">21<small> MB</small></span><span class="fact__label">of jars, fetched once</span></li>
+      <li><span class="fact__num">0<small> servers</small></span><span class="fact__label">behind this page</span></li>
+      <li><span class="fact__num">1<small> tab</small></span><span class="fact__label">is the whole machine</span></li>
+    </ul>
+  </section>
+
+  <!-- The rack. Each functional panel is a numbered rack unit with a live status LED. -->
+  <section class="rack" aria-label="Server rack">
+
+    <article class="unit" id="unit-console">
+      <header class="unit__rail">
+        <span class="unit__screw" aria-hidden="true"></span>
+        <span class="unit__slot">U1</span>
+        <h2 class="unit__name">console</h2>
+        <span class="unit__status"><span class="led" id="led-console" aria-hidden="true"></span><output id="status-console">idle</output></span>
+        <span class="unit__screw" aria-hidden="true"></span>
+      </header>
+
+      <div class="console" id="srv-console" role="log" aria-label="Server console" tabindex="0">
+        <div class="console__line console__line--sys">[page] paper 1.8.8 · cheerpj 4.3 · java 8 in wasm</div>
+        <div class="console__line console__line--sys">[page] the world persists in this browser's storage</div>
+        <div class="console__line console__line--sys">[page] press power on to boot the server in this tab</div>
+      </div>
+
+      <form class="cmdbar" id="cmd-form">
+        <span class="cmdbar__prompt" aria-hidden="true">&gt;</span>
+        <input class="cmdbar__input" id="cmd-input" type="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" enterkeyhint="send" placeholder="commands unlock when the server is up"
+               aria-label="Server command" disabled>
+        <button class="btn btn--small" id="cmd-send" type="submit" disabled>send</button>
+      </form>
+
+      <div class="powerbar">
+        <button class="btn btn--power" id="btn-start">power on</button>
+        <button class="btn btn--stop" id="btn-stop" disabled>stop</button>
+        <label class="wake" id="wake-label" hidden>
+          <input type="checkbox" id="wake-toggle"> keep screen awake
+        </label>
+      </div>
+
+      <div class="eula" id="eula" hidden>
+        <p>First boot writes <code>eula=true</code>, which means you accept the
+          <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a>.</p>
+        <div class="eula__row">
+          <button class="btn btn--power" id="btn-eula-yes">agree and boot</button>
+          <button class="btn" id="btn-eula-no">cancel</button>
+        </div>
+      </div>
+
+      <p class="unit__note">First power‑on downloads the jars and boots in a minute or two.
+        Keep the tab in the foreground: browsers throttle background tabs.</p>
+    </article>
+
+    <article class="unit" id="unit-files">
+      <header class="unit__rail">
+        <span class="unit__screw" aria-hidden="true"></span>
+        <span class="unit__slot">U2</span>
+        <h2 class="unit__name">files</h2>
+        <span class="unit__status"><span class="led" id="led-files" aria-hidden="true"></span><output id="status-files">offline</output></span>
+        <span class="unit__screw" aria-hidden="true"></span>
+      </header>
+
+      <div class="files__bar">
+        <nav class="files__crumbs" id="crumbs" aria-label="Path">/</nav>
+        <div class="files__actions">
+          <button class="btn btn--small" id="btn-refresh" disabled>refresh</button>
+          <button class="btn btn--small" id="btn-upload" disabled>upload</button>
+          <button class="btn btn--small" id="btn-mkdir" disabled>new folder</button>
+        </div>
+      </div>
+      <ul class="files__list" id="file-list">
+        <li class="files__empty">power the server on to browse its filesystem</li>
+      </ul>
+      <div class="files__foot">
+        <button class="btn btn--small" id="btn-export" disabled>export everything (.zip)</button>
+        <button class="btn btn--small btn--danger" id="btn-reset">factory reset world</button>
+      </div>
+      <input type="file" id="upload-input" hidden>
+    </article>
+
+    <article class="unit unit--empty" id="unit-tunnel">
+      <header class="unit__rail">
+        <span class="unit__screw" aria-hidden="true"></span>
+        <span class="unit__slot">U3</span>
+        <h2 class="unit__name">tunnel</h2>
+        <span class="unit__status"><span class="led led--off" aria-hidden="true"></span><output>not fitted</output></span>
+        <span class="unit__screw" aria-hidden="true"></span>
+      </header>
+      <div class="bay">
+        <p class="bay__vent" aria-hidden="true"></p>
+        <p class="bay__why">The team build gives every visitor a joinable address by relaying Minecraft TCP
+          connections through a Go server. This remake lives on GitHub Pages, which serves files and runs
+          nothing — so this bay ships empty. The server above is real; it just has no cable to the outside world.</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="spec" id="how">
+    <h2 class="spec__title">What runs where</h2>
+    <dl class="spec__grid">
+      <div class="spec__item">
+        <dt>The server</dt>
+        <dd>The team ported Paper 26.2 down to Java 8 with ~30 patches and a bytecode rewriter. This remake
+          side‑steps the entire pipeline: Paper 1.8.8 already <em>is</em> Java 8, so the stock jar runs after
+          one 30‑line bytecode patch that removes the TCP listen a browser can't do.</dd>
+      </div>
+      <div class="spec__item">
+        <dt>The runtime</dt>
+        <dd>CheerpJ compiles a JVM to WebAssembly and JavaScript. It fetches the jars over HTTP, mounts an
+          IndexedDB‑backed filesystem at <code>/files</code>, and runs a small launcher whose four
+          <code>native</code> methods are implemented in the page's JavaScript — that's the console and
+          file manager bridge.</dd>
+      </div>
+      <div class="spec__item">
+        <dt>The world</dt>
+        <dd>A flat world with the Nether and End switched off, so first generation takes seconds instead of
+          minutes — that's also what lets this boot on a phone. Every chunk you change is saved back to
+          browser storage and is still there tomorrow.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="compare">
+    <h2 class="spec__title">About this remake</h2>
+    <p>The <a href="https://paper.labs.lodeway.app" target="_blank" rel="noopener">original experiment</a> is by
+      Lodeway Labs, built by a team: a Java 8 port of modern Paper, a custom netty transport, and a tunnel
+      backend. This page is an AI's from‑scratch remake of the same idea in one session, built to run from
+      static hosting and to boot on a mobile browser. Same trick, different trade‑offs: they carried modern
+      Paper into the browser; this build picks the Paper that already fit.</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <p class="foot__legal">NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR
+    MICROSOFT. Paper belongs to the PaperMC project; Minecraft belongs to Mojang Studios. This page runs a
+    real server: it stops when the tab closes.</p>
+</footer>
+
+<script src="./app.js?v=3"></script>
+</body>
+</html>

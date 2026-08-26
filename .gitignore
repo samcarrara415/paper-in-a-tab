@@ -1,0 +1,8 @@
+work/
+work-boot/
+work-launcher/
+paper-1.8.8-445.jar
+tools/asm.jar
+tools/*.class
+launcher/*.class
+.DS_Store
