@@ -1,41 +1,66 @@
 # Tunnel status
 
 State of the relay/tunnel side as of 2026-08-26. Host machine: **`sams-pc`** (Windows 11).
+Everything in the brief is built, wired up, and verified end to end. Nothing is blocked.
 
 ## TL;DR for the page side
 
-| Thing | Value | State |
-|---|---|---|
-| **Public Minecraft address** | **`olds-hunger.tun.ply.gg:39539`** | ✅ **working, verified through the internet** |
-| Host WebSocket URL for the tab | `wss://sams-pc.taila9d64b.ts.net:8443/host` | ⛔ **blocked** — see [Tailscale](#tailscale--blocked) |
-| Health URL | `https://sams-pc.taila9d64b.ts.net:8443/health` | ⛔ blocked, same cause |
-| Local host WebSocket (works now) | `ws://localhost:8971/host` | ✅ working |
-| Local health (works now) | `http://localhost:8971/health` | ✅ working |
+| Thing | Value |
+|---|---|
+| **Host WebSocket URL for the tab** | **`wss://sams-pc.taila9d64b.ts.net:8443/host`** |
+| **Public Minecraft address** | **`olds-hunger.tun.ply.gg:39539`** |
+| Health URL (tailnet, valid TLS) | `https://sams-pc.taila9d64b.ts.net:8443/health` |
+| Local host WebSocket | `ws://localhost:8971/host` |
+| Local health | `http://localhost:8971/health` |
 
-The relay and the public TCP path are **done and proven end to end**. The only thing left is the
-`wss://` endpoint for the phone, which is blocked on one toggle in the Tailscale admin console —
-not a code problem, and it does not change the protocol.
+The `wss://` URL is reachable from any device on the tailnet, including the phone. TLS is a real
+Let's Encrypt cert provisioned by Tailscale, so an `https://` page can open it without mixed-content
+or cert complaints.
 
-Build the page half against `ws://localhost:8971/host` now; when the toggle lands the only change
-is the scheme and host in the URL.
+## Verified
 
-## What is verified working
-
-Built from `server/`, run as `-tcp 127.0.0.1:25565 -ws 127.0.0.1:8971`:
+Relay run as `-tcp 127.0.0.1:25565 -ws 127.0.0.1:8971`.
 
 | Test | Result |
 |---|---|
 | `echotest` → relay → `fakehost` → back (local) | ✅ `OK echo matched` |
-| **`echotest -mc` → playit → relay → `fakehost` → back (public internet)** | ✅ **`OK echo matched`, 31 bytes** |
-| Second connection to `/host` | ✅ `closed by relay, code 1013 "host already connected"`, first host unaffected |
-| Kill `fakehost` while a client is held open | ✅ `OK peer closed the connection (EOF)`, health → `{"conns":0,"host":false}` |
+| `echotest -mc` → **playit** → relay → `fakehost` → back (public internet) | ✅ 31 bytes, `OK echo matched` |
+| **Full production topology**: public playit → relay → **`wss://` over Tailscale** → host | ✅ 31 bytes, `OK echo matched` |
+| `/health` over TLS via Tailscale | ✅ `{"conns":0,"host":true}`, no cert warnings |
+| Second `/host` **over `wss://`** | ✅ `code 1013 "host already connected"`, first host unaffected |
+| Second `/host` over plain `ws://` | ✅ same |
+| Kill the host while a client is held open | ✅ `OK peer closed the connection (EOF)`, health → `{"conns":0,"host":false}` |
 | TCP client with no host connected | ✅ accepted then immediately aborted |
 | `/health` connection counting | ✅ `{"conns":1,"host":true}` with one client |
 
-The public run shows up in the relay log as `conn 5: open from 127.238.109.183` — the playit
-agent — with `fakehost: echo 31 byte(s) on conn 5`.
+The close code **1013 survives the Tailscale TLS proxy intact**, which matters — the page relies on
+distinguishing "already hosted" from "relay is down".
 
-## playit.gg — working
+## Tailscale
+
+```bash
+tailscale serve --bg --https 8443 http://localhost:8971
+```
+
+That exact command, run once. It persists across reboots; `tailscale serve status` shows:
+
+```
+https://sams-pc.taila9d64b.ts.net:8443 (tailnet only)
+|-- / proxy http://localhost:8971
+```
+
+To undo: `tailscale serve --https=8443 off`.
+
+- Tailnet `taila9d64b.ts.net` · this machine `sams-pc.taila9d64b.ts.net` (100.73.179.27)
+- Tailscale 1.102.2
+- On the tailnet: `sams-pc`, `sams-macbook-pro`, `iphone182`
+
+**This needed HTTPS certificates enabled for the tailnet** (admin console → DNS → HTTPS
+Certificates). Until that was on, `tailscale cert` returned `500: your Tailscale account does not
+support getting TLS certs` and `tailscale serve --https` would hang with no output and write no
+config. If the `wss://` URL ever stops working with that symptom, check that toggle first.
+
+## playit.gg
 
 | | |
 |---|---|
@@ -54,8 +79,8 @@ Runs as a Windows service, so it comes back by itself after a reboot.
 A playit **Minecraft Java** tunnel is protocol-aware. Its edge reads the client's handshake packet
 to route the connection and **silently drops anything whose first bytes are not Minecraft**. A
 plain `hello\n` gets accepted by the edge and killed before it reaches the agent — the relay logs
-nothing whatsoever, which looks exactly like a broken relay and is not one. This cost some time to
-pin down; it is why `echotest` grew a `-mc` flag that sends a real handshake + status request.
+nothing whatsoever, which looks exactly like a broken relay and is not one. This cost real time to
+pin down; it is why `echotest` has a `-mc` flag that sends a real handshake + status request.
 
 ```bash
 ./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539     # public: needs -mc
@@ -64,52 +89,28 @@ pin down; it is why `echotest` grew a `-mc` flag that sends a real handshake + s
 
 Real Minecraft clients are unaffected — they send a real handshake by definition.
 
-## Tailscale — blocked
-
-`tailscale serve --bg --https 8443 http://localhost:8971` hangs with no output and writes no serve
-config. Cause, confirmed directly and re-tested three times:
-
-```
-$ tailscale cert sams-pc.taila9d64b.ts.net
-500 Internal Server Error: your Tailscale account does not support getting TLS certs
-```
-
-HTTPS certificates are not enabled for the tailnet, so `serve` can never provision a cert.
-
-**What to click:** <https://login.tailscale.com/admin/dns> → **HTTPS Certificates** section →
-**Enable HTTPS**, and confirm the dialog (it warns that machine names become public in certificate
-transparency logs — expected and normal). MagicDNS is already on, nothing else is needed.
-
-Then the serve command works as written; first cert takes 30–60 s.
-
-- Tailnet `taila9d64b.ts.net` · this machine `sams-pc.taila9d64b.ts.net` (100.73.179.27)
-- Tailscale 1.102.2, already installed and logged in
-- On the tailnet: `sams-pc`, `sams-macbook-pro`, `iphone182` — the phone can already reach this
-  desktop, it just needs TLS
-
 ## Running everything after a reboot
 
+playit and Tailscale both restore themselves. Only the relay needs starting:
+
 ```bash
-# 1. relay — from the repo, on the tunnel branch
 cd server
 go build -o relay.exe .
 ./relay.exe -tcp 127.0.0.1:25565 -ws 127.0.0.1:8971
+```
 
-# 2. playit agent — Windows service, should already be up
-"/c/Program Files/playit_gg/bin/playit.exe" status     # expect Phase: running
-"/c/Program Files/playit_gg/bin/playit.exe" start      # only if it is not
+Confirm the other two are up:
 
-# 3. tailscale serve — persists once set; run again only if serve status is empty
-"/c/Program Files/Tailscale/tailscale.exe" serve --bg --https 8443 http://localhost:8971
-"/c/Program Files/Tailscale/tailscale.exe" serve status
+```bash
+"/c/Program Files/playit_gg/bin/playit.exe" status              # expect Phase: running
+"/c/Program Files/Tailscale/tailscale.exe" serve status         # expect the 8443 proxy line
 ```
 
 Sanity check the whole chain without the browser:
 
 ```bash
-./fakehost.exe -relay ws://localhost:8971/host &
-./echotest.exe 127.0.0.1:25565                                  # local
-./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539    # through the internet
+./fakehost.exe -relay wss://sams-pc.taila9d64b.ts.net:8443/host &
+./echotest.exe -mc -timeout 25s olds-hunger.tun.ply.gg:39539
 ```
 
 ## Notes
