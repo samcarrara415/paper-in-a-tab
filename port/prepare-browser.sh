@@ -14,6 +14,8 @@ cp api-52-all.jar jvmdg-patched.jar shade-asm.jar launcher26/launcher26.jar jfr-
 (cd ../tools && javac -cp asm.jar Patcher26.java)
 java -cp ../tools/asm.jar:../tools Patcher26 bind "$OUT/paper-26.2.jar"
 java -cp ../tools/asm.jar:../tools Patcher26 serverenv "$OUT/paper-26.2.jar"
+java -cp ../tools/asm.jar:../tools Patcher26 verfetch "$OUT/paper-26.2.jar"
+java -cp ../tools/asm.jar:../tools Patcher26 authlib "$OUT/authlib-9.0.75.jar"
 java -cp ../tools/asm.jar:../tools Patcher26 log4j "$OUT/log4j-api-2.26.0.jar"
 java -cp ../tools/asm.jar:../tools Patcher26 netty "$OUT/netty-common-4.2.15.Final.jar"
 java -cp ../tools/asm.jar:../tools Patcher26 cleaner "$OUT/netty-common-4.2.15.Final.jar"

@@ -114,6 +114,49 @@ public class Patcher26 {
                     mv.visitEnd();
                 }
             });
+        } else if (mode.equals("authlib")) {
+            // The services-key HTTPS fetch freezes CheerpJ's cooperative
+            // scheduler on some browsers (desktop Safari hung the whole boot).
+            // Offline mode never needs the key: report "no keys" immediately.
+            entry = "com/mojang/authlib/yggdrasil/YggdrasilServicesKeyInfo.class";
+            patched = transform(read(jar, entry), new BodySwap("fetch",
+                    "(Ljava/net/URL;Lcom/mojang/authlib/minecraft/client/MinecraftClient;)Ljava/util/Optional;") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode();
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Optional", "empty", "()Ljava/util/Optional;", false);
+                    mv.visitInsn(Opcodes.ARETURN);
+                    mv.visitMaxs(1, 2);
+                    mv.visitEnd();
+                }
+            });
+        } else if (mode.equals("verfetch")) {
+            // Same freeze risk for Paper's update check — cut every fetch path.
+            entry = "com/destroystokyo/paper/PaperVersionFetcher.class";
+            byte[] c = read(jar, entry);
+            c = transform(c, new BodySwap("getUpdateStatusStartupMessage", "()V") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode(); mv.visitInsn(Opcodes.RETURN); mv.visitMaxs(0, 0); mv.visitEnd();
+                }
+            });
+            c = transform(c, new BodySwap("fetchDistanceFromSiteApi", "(I)I") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode(); mv.visitInsn(Opcodes.ICONST_M1); mv.visitInsn(Opcodes.IRETURN); mv.visitMaxs(1, 1); mv.visitEnd();
+                }
+            });
+            c = transform(c, new BodySwap("fetchDistanceFromGitHub", "(Ljava/lang/String;Ljava/lang/String;)I") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode(); mv.visitInsn(Opcodes.ICONST_M1); mv.visitInsn(Opcodes.IRETURN); mv.visitMaxs(1, 2); mv.visitEnd();
+                }
+            });
+            patched = transform(c, new BodySwap("fetchMinecraftVersionList", "()Ljava/util/Optional;") {
+                void body(MethodVisitor mv) {
+                    mv.visitCode();
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Optional", "empty", "()Ljava/util/Optional;", false);
+                    mv.visitInsn(Opcodes.ARETURN);
+                    mv.visitMaxs(1, 0);
+                    mv.visitEnd();
+                }
+            });
         } else {
             throw new IllegalArgumentException(mode);
         }
