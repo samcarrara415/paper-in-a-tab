@@ -17,6 +17,10 @@ public class BrowserLauncher26 {
     public static native String pollCommand();
     public static native String pollOp();
     public static native void opResult(String json);
+    // tunnel bridge: poll returns a batch of relay events (null = no tunnel
+    // session, "{}" = connected but idle); tunnelOut pushes bytes/closes back.
+    public static native String tunnelPoll();
+    public static native void tunnelOut(String json);
 
     static final boolean NATIVES = !"false".equals(System.getProperty("browser.natives", "true"));
     static PrintStream realOut;
@@ -128,6 +132,10 @@ public class BrowserLauncher26 {
             String op = pollOp();
             if (op != null) {
                 handleOp(op);
+            }
+            String batch = tunnelPoll();
+            if (batch != null && !"{}".equals(batch)) {
+                TunnelTransport26.handleBatch(ds, batch);
             }
         } catch (Throwable t) {
             send("[launcher] pump error: " + t);

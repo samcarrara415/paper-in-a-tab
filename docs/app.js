@@ -139,7 +139,6 @@
 
   function tunnelConnect(url) {
     if (tunnel.ws) return;
-    if (version !== "188") { log("[page] the tunnel currently supports the paper 1.8.8 bay only."); return; }
     if (state !== "running") { log("[page] power the server on first, then link the tunnel."); return; }
     tunnelSetState("linking");
     log("[page] linking to relay at " + url + " …");
@@ -353,6 +352,8 @@
           Java_BrowserLauncher26_pollCommand: Java_BrowserLauncher_pollCommand,
           Java_BrowserLauncher26_pollOp: Java_BrowserLauncher_pollOp,
           Java_BrowserLauncher26_opResult: Java_BrowserLauncher_opResult,
+          Java_BrowserLauncher26_tunnelPoll: Java_BrowserLauncher_tunnelPoll,
+          Java_BrowserLauncher26_tunnelOut: Java_BrowserLauncher_tunnelOut,
           // CheerpJ ships no implementation of this JDK native; -1 is the
           // documented "load average unavailable" answer.
           Java_sun_misc_Unsafe_getLoadAverage: async function (lib, self, loadavg, nelems) { return -1; },

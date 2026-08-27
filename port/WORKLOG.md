@@ -111,3 +111,17 @@ Paper.IgnoreJavaVersion=true; 26.2 works in /files/v26 (1.8.8 owns /files).
 - Quirk: first joiner can fall through unloaded spawn chunks (keep-spawn-loaded off
   for phone perf); ground loads a moment later, respawn recovers.
 - 26.2 tunnel: not wired yet (transport is version-specific; 1.8.8 only for now).
+
+## 26.2 tunnel (Aug 26)
+
+- launcher26/TunnelTransport26.java: modern sibling of the 1.8.8 transport —
+  LocalServerChannel + vanilla Connection.configureSerialization(SERVERBOUND),
+  Connection + ServerHandshakePacketListenerImpl per conn, connections list via
+  reflection, own DefaultEventLoopGroup. Same addr_fix InetSocketAddress swap.
+  Pumped from the existing addTickable tick hook (tunnelPoll/tunnelOut natives,
+  registered for the BrowserLauncher26 prefix in app.js). launcher26.v6.jar.
+- Hand-rolled JSON batch parsing (modern jar relocates gson).
+- VERIFIED locally: 26.2 boots, links, and answers a hand-written server-list
+  ping through relay→WS→tab: version "Paper 26.2" proto 776, MOTD, player
+  counts. Login/play phases need a real 26.2 client to verify (mineflayer
+  cannot speak 26.2) — same addr_fix + pipeline that fully worked on 1.8.8.
