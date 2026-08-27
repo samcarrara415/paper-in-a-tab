@@ -206,7 +206,7 @@ public class BrowserLauncher26 {
 
     // ---- first-boot configuration ---------------------------------------
 
-    static final int CONFIG_VERSION = 4;
+    static final int CONFIG_VERSION = 5;
 
     static void writeDefaultConfigs() throws IOException {
         boolean upgrade = readConfigVersion() < CONFIG_VERSION;
@@ -222,6 +222,9 @@ public class BrowserLauncher26 {
                 "max-tick-time=-1\n" +
                 // per-chunk fsync over IndexedDB is brutal; batched writes only
                 "sync-chunk-writes=false\n" +
+                // the downgraded Deflater path corrupts compressed packets —
+                // clients failed to decode right after login. Plain frames only.
+                "network-compression-threshold=-1\n" +
                 "max-players=5\n" +
                 "spawn-protection=0\n" +
                 "motd=Paper 26.2 in a tab (AI port)\n", upgrade);
