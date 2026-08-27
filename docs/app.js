@@ -643,6 +643,21 @@
   $("ver-262").addEventListener("click", function () { pickVersion("262"); });
   if (new URLSearchParams(location.search).get("v") === "262") pickVersion("262");
 
+  // copy the whole console buffer — the only sane way to get phone logs out
+  $("btn-copylog").addEventListener("click", function () {
+    var text = Array.from(document.querySelectorAll(".console__line")).map(function (e) { return e.textContent; }).join("\n");
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); log("[page] console copied to clipboard."); }
+      catch (e) { log("[page] copy failed — long-press the console to select instead."); }
+      ta.remove();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { log("[page] console copied to clipboard."); }, fallback);
+    } else { fallback(); }
+  });
+
   // U3 tunnel bay controls. ?tunnel=wss://… prefills the relay URL;
   // ?addr=host:port shows the public Minecraft address players should use.
   (function () {

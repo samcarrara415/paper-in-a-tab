@@ -23,6 +23,7 @@ public class BrowserLauncher26 {
     public static native void tunnelOut(String json);
 
     static final boolean NATIVES = !"false".equals(System.getProperty("browser.natives", "true"));
+    static volatile boolean tunnelArmed = true;
     static PrintStream realOut;
 
     public static void main(String[] args) throws Exception {
@@ -133,9 +134,16 @@ public class BrowserLauncher26 {
             if (op != null) {
                 handleOp(op);
             }
-            String batch = tunnelPoll();
-            if (batch != null && !"{}".equals(batch)) {
-                TunnelTransport26.handleBatch(ds, batch);
+            if (tunnelArmed) {
+                try {
+                    String batch = tunnelPoll();
+                    if (batch != null && !"{}".equals(batch)) {
+                        TunnelTransport26.handleBatch(ds, batch);
+                    }
+                } catch (UnsatisfiedLinkError e) {
+                    tunnelArmed = false;
+                    send("[launcher] tunnel bridge unavailable on this page version; refresh for tunnel support");
+                }
             }
         } catch (Throwable t) {
             send("[launcher] pump error: " + t);

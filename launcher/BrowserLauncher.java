@@ -60,6 +60,7 @@ public class BrowserLauncher {
         boot.start();
 
         BufferedReader stdin = NATIVES ? null : new BufferedReader(new InputStreamReader(System.in));
+        boolean tunnelArmed = true;
         while (true) {
             String cmd = NATIVES ? pollCommand() : (stdin.ready() ? stdin.readLine() : null);
             if (cmd != null && !cmd.trim().isEmpty()) {
@@ -75,14 +76,21 @@ public class BrowserLauncher {
                 if (op != null) handleOp(op);
             }
             boolean tunnelActive = false;
-            if (NATIVES) {
-                String batch = tunnelPoll();
-                if (batch != null) {
-                    tunnelActive = true;
-                    MinecraftServer srv2 = MinecraftServer.getServer();
-                    if (srv2 != null && srv2.isRunning() && !"{}".equals(batch)) {
-                        TunnelTransport.handleBatch(srv2, batch);
+            if (NATIVES && tunnelArmed) {
+                try {
+                    String batch = tunnelPoll();
+                    if (batch != null) {
+                        tunnelActive = true;
+                        MinecraftServer srv2 = MinecraftServer.getServer();
+                        if (srv2 != null && srv2.isRunning() && !"{}".equals(batch)) {
+                            TunnelTransport.handleBatch(srv2, batch);
+                        }
                     }
+                } catch (UnsatisfiedLinkError e) {
+                    // page code predates the tunnel natives (stale cache) —
+                    // run without the tunnel instead of dying.
+                    tunnelArmed = false;
+                    send("[launcher] tunnel bridge unavailable on this page version; refresh for tunnel support");
                 }
             }
             // a live tunnel needs low-latency pumping; idle pages don't
