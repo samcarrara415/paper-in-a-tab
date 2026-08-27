@@ -638,6 +638,16 @@
 
   setState("idle");
 
+  // CheerpJ runs unusably slowly under desktop Safari (verified: both server
+  // versions wedge mid-boot); Chromium engines and iOS Safari are fine.
+  (function () {
+    var ua = navigator.userAgent;
+    if (/Safari/.test(ua) && !/Chrome|CriOS|Edg|Android|iPhone|iPad|Mobile/.test(ua)) {
+      log("[page] heads up: desktop Safari runs this JVM extremely slowly and may never finish booting.");
+      log("[page] use Chrome, Edge, or Arc on desktop — or Safari on an iPhone/iPad, which works fine.");
+    }
+  })();
+
   function pickVersion(v) {
     if (state !== "idle") return;
     version = v;
