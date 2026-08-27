@@ -45,6 +45,21 @@ public class Patcher {
                     mv.visitEnd();
                 }
             }));
+        TARGETS.put("net/minecraft/server/v1_8_R3/NetworkManager.class",
+            new Target("getRawAddress", "()Ljava/net/SocketAddress;", new BodyWriter() {
+                public void write(MethodVisitor mv) {
+                    // returns channel.remoteAddress() upstream; our in-JVM
+                    // channels report a netty LocalAddress there, and callers
+                    // cast to InetSocketAddress — return the fixed field instead.
+                    mv.visitCode();
+                    mv.visitVarInsn(Opcodes.ALOAD, 0);
+                    mv.visitFieldInsn(Opcodes.GETFIELD, "net/minecraft/server/v1_8_R3/NetworkManager",
+                            "l", "Ljava/net/SocketAddress;");
+                    mv.visitInsn(Opcodes.ARETURN);
+                    mv.visitMaxs(1, 1);
+                    mv.visitEnd();
+                }
+            }));
         TARGETS.put("org/apache/logging/log4j/LogManager.class",
             new Target("callerClass", "(Ljava/lang/Class;)Ljava/lang/Class;", new BodyWriter() {
                 public void write(MethodVisitor mv) {

@@ -94,3 +94,20 @@ Paper.IgnoreJavaVersion=true; 26.2 works in /files/v26 (1.8.8 owns /files).
   starved the *boot* instead — do not use priorities under CheerpJ.
 - Results (iPhone 17 sim, real WebKit): 26.2 boots Done in 80–145s, commands
   work via tick pump, world persists across Safari relaunch.
+
+## Tunnel round (Aug 26, tunnel branch)
+
+- PC session's Go relay + playit + tailscale-serve verified their side; this side adds:
+  launcher/TunnelTransport.java — in-JVM netty LocalServerChannel wearing the exact
+  vanilla 1.8.8 pipeline; each relay conn id becomes a LocalChannel pair. Two new
+  natives (tunnelPoll/tunnelOut) batch (id, b64) events; poll drops to 50ms while linked.
+- Fixes found by a real client join (mineflayer 1.8.8):
+  1) CraftBukkit login casts the connection address to InetSocketAddress — addr_fix
+     handler overwrites NetworkManager.l with a loopback address post-channelActive.
+  2) NetworkManager.getRawAddress() reads channel.remoteAddress() live (LocalAddress)
+     — patched in the jar (445p4) to return field l.
+- VERIFIED: mineflayer joined through relay→WS→tab: login 329ms, spawn 603ms, chat
+  echoed in tab console, clean disconnect. U3 bay UI: ?tunnel= and ?addr= params.
+- Quirk: first joiner can fall through unloaded spawn chunks (keep-spawn-loaded off
+  for phone perf); ground loads a moment later, respawn recovers.
+- 26.2 tunnel: not wired yet (transport is version-specific; 1.8.8 only for now).

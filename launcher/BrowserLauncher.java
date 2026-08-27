@@ -24,6 +24,10 @@ public class BrowserLauncher {
     public static native String pollCommand();
     public static native String pollOp();
     public static native void opResult(String json);
+    // tunnel bridge: poll returns a batch of relay events (null = no tunnel
+    // session, "{}" = connected but idle); tunnelOut pushes bytes/closes back.
+    public static native String tunnelPoll();
+    public static native void tunnelOut(String json);
 
     static final boolean NATIVES = !"false".equals(System.getProperty("browser.natives", "true"));
     static PrintStream realOut;
@@ -70,7 +74,19 @@ public class BrowserLauncher {
                 String op = pollOp();
                 if (op != null) handleOp(op);
             }
-            Thread.sleep(250);
+            boolean tunnelActive = false;
+            if (NATIVES) {
+                String batch = tunnelPoll();
+                if (batch != null) {
+                    tunnelActive = true;
+                    MinecraftServer srv2 = MinecraftServer.getServer();
+                    if (srv2 != null && srv2.isRunning() && !"{}".equals(batch)) {
+                        TunnelTransport.handleBatch(srv2, batch);
+                    }
+                }
+            }
+            // a live tunnel needs low-latency pumping; idle pages don't
+            Thread.sleep(tunnelActive ? 50 : 250);
         }
     }
 

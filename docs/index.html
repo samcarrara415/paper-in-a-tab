@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css?v=9">
+  <link rel="stylesheet" href="./style.css?v=10">
 </head>
 <body>
 
@@ -131,19 +131,26 @@
       <input type="file" id="upload-input" hidden>
     </article>
 
-    <article class="unit unit--empty" id="unit-tunnel">
+    <article class="unit" id="unit-tunnel">
       <header class="unit__rail">
         <span class="unit__screw" aria-hidden="true"></span>
         <span class="unit__slot">U3</span>
         <h2 class="unit__name">tunnel</h2>
-        <span class="unit__status"><span class="led led--off" aria-hidden="true"></span><output>not fitted</output></span>
+        <span class="unit__status"><span class="led" id="led-tunnel" aria-hidden="true"></span><output id="status-tunnel">not linked</output></span>
         <span class="unit__screw" aria-hidden="true"></span>
       </header>
       <div class="bay">
-        <p class="bay__vent" aria-hidden="true"></p>
-        <p class="bay__why">The team build gives every visitor a joinable address by relaying Minecraft TCP
-          connections through a Go server. This remake lives on GitHub Pages, which serves files and runs
-          nothing — so this bay ships empty. The server above is real; it just has no cable to the outside world.</p>
+        <div class="tunnel__row">
+          <input class="tunnel__input" id="tunnel-url" type="text" autocomplete="off" autocapitalize="off"
+                 spellcheck="false" placeholder="wss://your-relay-host/host" aria-label="Relay WebSocket URL">
+          <button class="btn btn--small" id="btn-tunnel">link</button>
+        </div>
+        <p class="tunnel__addr" id="tunnel-addr-row" hidden>players join at
+          <code id="tunnel-addr"></code></p>
+        <p class="bay__why">GitHub Pages can't run the relay, so this bay links to one you run yourself —
+          the repo's <code>server/</code> relay plus a free playit.gg tunnel gives the server above a real,
+          joinable address. Boot paper 1.8.8, then link. Pass <code>?tunnel=</code> and
+          <code>?addr=</code> in the URL to prefill.</p>
       </div>
     </article>
   </section>
@@ -189,6 +196,6 @@
     real server: it stops when the tab closes.</p>
 </footer>
 
-<script src="./app.js?v=9"></script>
+<script src="./app.js?v=10"></script>
 </body>
 </html>

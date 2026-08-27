@@ -29,7 +29,7 @@
   // GitHub Pages serves this site from a subpath; CheerpJ's /app mount maps to
   // the origin root, so the jar paths must include wherever we're deployed.
   var basePath = new URL(".", location.href).pathname; // e.g. "/paper-in-a-tab/"
-  var classpath = "/app" + basePath + "jars/launcher.3.jar:/app" + basePath + "jars/paper-server.445p3.jar";
+  var classpath = "/app" + basePath + "jars/launcher.4.jar:/app" + basePath + "jars/paper-server.445p4.jar";
 
   // Which server this boot runs: "188" (proven, phone-sized) or "262"
   // (the AI-ported modern Paper — heavy, desktop-recommended).
@@ -110,6 +110,80 @@
     if (up) { cmdInput.placeholder = "try: say hi · time set day · gamerule doDaylightCycle false"; }
   }
 
+  // ---- tunnel: WS client for the relay (server/relay.go protocol) ----
+  // Real Minecraft clients hit the relay over TCP; the relay hands them to us
+  // as (id, bytes) events which the launcher feeds into an in-JVM listener.
+  var tunnel = { ws: null, state: "off", openQ: [], dataQ: [], closeQ: [], live: 0 };
+
+  function abToB64(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin);
+  }
+  function b64ToBytes(b64) {
+    return Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+  }
+
+  function tunnelSetState(st, label) {
+    tunnel.state = st;
+    var led = $("led-tunnel"), out = $("status-tunnel"), btn = $("btn-tunnel");
+    if (!led) return;
+    led.className = "led " + (st === "linked" ? "led--green" : st === "linking" ? "led--amber led--blink" : "");
+    out.textContent = label || (st === "linked" ? (tunnel.live ? "relaying " + tunnel.live : "linked") : st === "linking" ? "linking" : "not linked");
+    btn.textContent = st === "off" ? "link" : "unlink";
+    $("tunnel-url").disabled = st !== "off";
+  }
+
+  function tunnelConnect(url) {
+    if (tunnel.ws) return;
+    if (version !== "188") { log("[page] the tunnel currently supports the paper 1.8.8 bay only."); return; }
+    if (state !== "running") { log("[page] power the server on first, then link the tunnel."); return; }
+    tunnelSetState("linking");
+    log("[page] linking to relay at " + url + " …");
+    var ws;
+    try { ws = new WebSocket(url); } catch (e) { tunnelSetState("off"); log("[page] bad relay url: " + e.message); return; }
+    ws.binaryType = "arraybuffer";
+    tunnel.ws = ws;
+    ws.onopen = function () { ws.send(JSON.stringify({ t: "hello", proto: 1 })); };
+    ws.onmessage = function (ev) {
+      if (typeof ev.data === "string") {
+        var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m.t === "ready") {
+          tunnelSetState("linked");
+          log("[page] tunnel linked. real minecraft clients can join through the relay now.");
+        } else if (m.t === "open") {
+          tunnel.openQ.push(m.id);
+          tunnel.live++;
+          tunnelSetState("linked");
+          log("[page] tunnel: client #" + m.id + " connecting…");
+        } else if (m.t === "close") {
+          tunnel.closeQ.push(m.id);
+          tunnel.live = Math.max(0, tunnel.live - 1);
+          tunnelSetState("linked");
+        }
+      } else {
+        var view = new DataView(ev.data);
+        var id = view.getUint32(0);
+        tunnel.dataQ.push({ id: id, b64: abToB64(ev.data.slice(4)) });
+      }
+    };
+    ws.onclose = function (ev) {
+      var was = tunnel.state;
+      tunnel.ws = null; tunnel.openQ = []; tunnel.dataQ = []; tunnel.closeQ = []; tunnel.live = 0;
+      tunnelSetState("off");
+      if (ev.code === 1013) log("[page] relay says another tab is already hosting.");
+      else if (was !== "off") log("[page] tunnel disconnected (" + ev.code + ").");
+    };
+    ws.onerror = function () { /* onclose follows with the code */ };
+  }
+
+  function tunnelDisconnect() {
+    if (tunnel.ws) { tunnel.ws.close(1000); }
+  }
+
   // ---- natives: the JavaScript half of BrowserLauncher ----
 
   // Console lines arrive twice for some loggers (log4j appender + stdout tee),
@@ -145,6 +219,30 @@
   }
   async function Java_BrowserLauncher_pollOp(lib) {
     return opQueue.length ? opQueue.shift() : null;
+  }
+  async function Java_BrowserLauncher_tunnelPoll(lib) {
+    if (!tunnel.ws || tunnel.state !== "linked") return null;
+    if (!tunnel.openQ.length && !tunnel.dataQ.length && !tunnel.closeQ.length) return "{}";
+    var batch = {};
+    if (tunnel.openQ.length) { batch.open = tunnel.openQ; tunnel.openQ = []; }
+    if (tunnel.dataQ.length) { batch.data = tunnel.dataQ; tunnel.dataQ = []; }
+    if (tunnel.closeQ.length) { batch.close = tunnel.closeQ; tunnel.closeQ = []; }
+    return JSON.stringify(batch);
+  }
+  async function Java_BrowserLauncher_tunnelOut(lib, json) {
+    if (!tunnel.ws || tunnel.ws.readyState !== 1) return;
+    try {
+      var m = JSON.parse(String(json));
+      if (m.close !== undefined) {
+        tunnel.ws.send(JSON.stringify({ t: "close", id: m.close }));
+        return;
+      }
+      var payload = b64ToBytes(m.b64);
+      var frame = new Uint8Array(4 + payload.length);
+      new DataView(frame.buffer).setUint32(0, m.id);
+      frame.set(payload, 4);
+      tunnel.ws.send(frame.buffer);
+    } catch (e) { console.error("tunnelOut", e); }
   }
   async function Java_BrowserLauncher_opResult(lib, json) {
     try {
@@ -204,7 +302,7 @@
         main: "BrowserLauncher",
         classpath: classpath,
         userDir: "/files",
-        warm: ["./jars/launcher.3.jar", "./jars/paper-server.445p3.jar"],
+        warm: ["./jars/launcher.4.jar", "./jars/paper-server.445p4.jar"],
         warmTotal: 0,
         label: "paper 1.8.8"
       };
@@ -249,6 +347,8 @@
           Java_BrowserLauncher_pollCommand: Java_BrowserLauncher_pollCommand,
           Java_BrowserLauncher_pollOp: Java_BrowserLauncher_pollOp,
           Java_BrowserLauncher_opResult: Java_BrowserLauncher_opResult,
+          Java_BrowserLauncher_tunnelPoll: Java_BrowserLauncher_tunnelPoll,
+          Java_BrowserLauncher_tunnelOut: Java_BrowserLauncher_tunnelOut,
           Java_BrowserLauncher26_emitLine: Java_BrowserLauncher_emitLine,
           Java_BrowserLauncher26_pollCommand: Java_BrowserLauncher_pollCommand,
           Java_BrowserLauncher26_pollOp: Java_BrowserLauncher_pollOp,
@@ -541,6 +641,24 @@
   $("ver-188").addEventListener("click", function () { pickVersion("188"); });
   $("ver-262").addEventListener("click", function () { pickVersion("262"); });
   if (new URLSearchParams(location.search).get("v") === "262") pickVersion("262");
+
+  // U3 tunnel bay controls. ?tunnel=wss://… prefills the relay URL;
+  // ?addr=host:port shows the public Minecraft address players should use.
+  (function () {
+    var qs = new URLSearchParams(location.search);
+    var pre = qs.get("tunnel");
+    if (pre) $("tunnel-url").value = pre;
+    var addr = qs.get("addr");
+    if (addr) { $("tunnel-addr").textContent = addr; $("tunnel-addr-row").hidden = false; }
+    $("btn-tunnel").addEventListener("click", function () {
+      if (tunnel.state === "off") {
+        var url = $("tunnel-url").value.trim();
+        if (url) tunnelConnect(url);
+      } else {
+        tunnelDisconnect();
+      }
+    });
+  })();
 
   // ?autoboot=1 powers on immediately (and counts as accepting the EULA) —
   // used for automated testing and boot-me deep links.
