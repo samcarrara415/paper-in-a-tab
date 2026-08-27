@@ -386,6 +386,14 @@
         },
         javaProperties: ["user.dir=" + plan.userDir, "java.awt.headless=true",
                          "log4j2.formatMsgNoLookups=true", "Paper.IgnoreJavaVersion=true",
+                         // authlib's outbound HTTPS (services key fetch) hangs forever in
+                         // some browsers' CheerpJ network layer (desktop Safari froze the
+                         // whole boot). Point every Mojang API host at a dead local port
+                         // so those calls fail instantly — offline mode needs none of them.
+                         "minecraft.api.auth.host=http://127.0.0.1:9",
+                         "minecraft.api.account.host=http://127.0.0.1:9",
+                         "minecraft.api.session.host=http://127.0.0.1:9",
+                         "minecraft.api.services.host=http://127.0.0.1:9",
                          // netty's Unsafe/cleaner probing goes through MethodHandle
                          // paths that crash CheerpJ's invoker; heap buffers are the
                          // right choice inside a browser tab anyway.
